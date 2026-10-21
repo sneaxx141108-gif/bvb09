@@ -81,8 +81,14 @@ def iso(dt):
     return dt.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
+LAST_FETCH = {}
+DEBUG = []
+
+
 def http_get(url, headers=None, timeout=40, retries=2):
-    h = {'User-Agent': UA, 'Accept-Language': 'de-DE,de;q=0.9,en;q=0.8'}
+    h = {'User-Agent': UA, 'Accept-Language': 'de-DE,de;q=0.9,en;q=0.8',
+         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+         'Cache-Control': 'no-cache', 'Upgrade-Insecure-Requests': '1'}
     if headers:
         h.update(headers)
     last = None
@@ -90,7 +96,9 @@ def http_get(url, headers=None, timeout=40, retries=2):
         try:
             req = urllib.request.Request(url, headers=h)
             with urllib.request.urlopen(req, timeout=timeout) as r:
-                return r.read().decode('utf-8', errors='replace')
+                body = r.read().decode('utf-8', errors='replace')
+                LAST_FETCH.update({'url': url, 'final': r.geturl(), 'status': r.status})
+                return body
         except urllib.error.HTTPError as e:
             last = 'HTTP %s' % e.code
             if e.code == 404:
@@ -126,6 +134,17 @@ def tm_get(path):
         return http_get(TM + path)
     finally:
         _tm_last[0] = time.time()
+
+
+def page_hint(page, what):
+    """Merkt sich, was Transfermarkt statt der erwarteten Seite geliefert hat (fuer die Update-Zentrale)."""
+    title = re.search(r'<title[^>]*>(.*?)</title>', page or '', re.S | re.I)
+    body = (page or '')[page.find('<body'):] if page and '<body' in page else (page or '')
+    info = {'what': what, 'url': LAST_FETCH.get('url', '').replace(TM, ''), 'final': LAST_FETCH.get('final'),
+            'status': LAST_FETCH.get('status'), 'length': len(page or ''),
+            'title': text(title.group(1))[:120] if title else None, 'snippet': text(body)[:300]}
+    DEBUG.append(info)
+    return '%s, Seite: %s' % (what, info['title'] or 'ohne Titel')
 
 
 def oldb(path):
@@ -328,7 +347,7 @@ def save(name, obj):
 def parse_kader(page):
     tables = items_tables(page)
     if not tables:
-        raise RuntimeError('Kadertabelle nicht gefunden')
+        raise RuntimeError(page_hint(page, 'Kadertabelle nicht gefunden'))
     t = tables[0]
     names = header_names(t)
     players = []
@@ -391,7 +410,7 @@ def parse_kader(page):
 def parse_stats(page):
     tables = items_tables(page)
     if not tables:
-        raise RuntimeError('Statistik-Tabelle nicht gefunden')
+        raise RuntimeError(page_hint(page, 'Statistik-Tabelle nicht gefunden'))
     t = tables[0]
     names = header_names(t)
     keys = {'Einsätze': 'apps', 'Tore': 'goals', 'Torvorlagen': 'assists', 'Gelbe Karten': 'yellow',
@@ -699,12 +718,22 @@ def mod_history(state):
                 tot[-1][1] = team['totalValue']
             elif not tot or tot[-1][1] != team['totalValue']:
                 tot.append([TODAY, team['totalValue']])
+        checked = hist.setdefault('checked', [])
         for p in team['players']:
             series = hist['players'].get(p['id'])
+            if series == [] and p['id'] not in checked:
+                series = None
             if series is None and budget > 0:
                 budget -= 1
+                raw = ''
                 try:
-                    g = json.loads(tm_get('/ceapi/marketValueDevelopment/graph/%s' % p['id']))
+                    raw = tm_get('/ceapi/marketValueDevelopment/graph/%s' % p['id'])
+                    try:
+                        g = json.loads(raw)
+                    except ValueError:
+                        if not any(d['what'].startswith('Marktwert-Historie') for d in DEBUG):
+                            page_hint(raw, 'Marktwert-Historie nicht lesbar')
+                        raise
                     series = []
                     last_club = None
                     for pt in g.get('list', []):
@@ -712,11 +741,16 @@ def mod_history(state):
                         club = pt.get('verein') or None
                         series.append([d, pt['y']] + ([club] if club and club != last_club else []))
                         last_club = club or last_club
+                    if not series:
+                        checked.append(p['id'])
                     seeded += 1
                 except Exception as e:
                     log('  Historie %s: %s' % (p['name'], e))
-                    series = []
-                hist['players'][p['id']] = series
+                    series = None
+                if series is not None:
+                    hist['players'][p['id']] = series
+                else:
+                    continue
             if series is None:
                 continue
             v = p.get('value')
@@ -760,6 +794,8 @@ def mod_transfers(state):
     prev = load('transfers.json', {}) or {}
     page = tm_get('/x/transfers/verein/16/saison_id/%d' % TRANSFER_SEASON)
     t = parse_transfers(page)
+    if not t['in'] and not t['out'] and 'transfer-record' not in page:
+        raise RuntimeError(page_hint(page, 'Transferliste nicht gefunden'))
     lab = '%02d/%02d' % (TRANSFER_SEASON % 100, (TRANSFER_SEASON + 1) % 100)
     out = {'season': TRANSFER_SEASON, 'seasonLabel': lab, 'updatedAt': iso(NOW)}
     out.update(t)
@@ -779,6 +815,8 @@ def mod_rumors(state):
     prev = load('rumors.json', {}) or {}
     page = tm_get('/x/geruechte/verein/16')
     items = parse_rumors(page)
+    if not items and 'Gerüchte' not in page:
+        raise RuntimeError(page_hint(page, 'Gerüchteliste nicht gefunden'))
     old = {x['id']: x for x in prev.get('items', [])}
     if old:
         for x in items:
@@ -905,6 +943,8 @@ def mod_matches(state):
         u23, comp_id = parse_fixtures_tm(page)
         if u23:
             out['u23'] = u23
+        else:
+            state['warnings'].append('BVB II Spiele: ' + page_hint(page, 'Spielplan BVB II nicht gefunden'))
         if comp_id:
             tpage = tm_get('/x/tabelle/wettbewerb/%s/saison_id/%d' % (comp_id, SEASON))
             rows = parse_table_tm(tpage)
@@ -945,6 +985,16 @@ NEWS_QUERIES = [
     ('Borussia Dortmund transfer', 'en'), ('Dortmund Fabrizio Romano', 'en'),
     ('Dortmund "here we go"', 'en'),
 ]
+
+
+def source_tier(src):
+    """Stufe 1/2 nur fuer Quellen von unserer Liste - alles andere fliegt raus (Gemini wird nicht blind vertraut)."""
+    s = (src or '').lower()
+    for tier, names in ((1, TIER1), (2, TIER2)):
+        for name in names:
+            if re.search(r'(?<![a-z])' + re.escape(name.lower()) + r'(?![a-z])', s):
+                return tier
+    return None
 
 
 def outlet_tier(outlet):
@@ -1017,7 +1067,7 @@ def gemini_models(key):
     return order[:6]
 
 
-def gemini_call(key, models, prompt, grounded):
+def gemini_call(key, models, prompt, grounded, attempts=None):
     last = None
     for model in models:
         body = {'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],
@@ -1047,13 +1097,18 @@ def gemini_call(key, models, prompt, grounded):
                     detail = json.loads(e.read().decode('utf-8')).get('error', {}).get('message', '')[:160]
                 except Exception:
                     pass
-                last = '%s: HTTP %s %s' % (model, e.code, detail)
-                if e.code == 429 and attempt == 0:
-                    time.sleep(25)
+                last = '%s%s: HTTP %s %s' % (model, ' (Suche)' if grounded else '', e.code, detail)
+                if attempts is not None:
+                    attempts.append(last[:200])
+                # kurzer Engpass -> einmal warten; aufgebrauchtes Tageskontingent -> naechstes Modell
+                if e.code in (429, 503) and attempt == 0 and not re.search(r'quota|exhausted|limit: 0', detail, re.I):
+                    time.sleep(20)
                     continue
                 break
             except Exception as e:
-                last = '%s: %s' % (model, e)
+                last = '%s%s: %s' % (model, ' (Suche)' if grounded else '', e)
+                if attempts is not None:
+                    attempts.append(str(last)[:200])
                 break
     raise RuntimeError(last or 'kein Modell verfügbar')
 
@@ -1114,7 +1169,9 @@ def build_prompt(headlines, squads, stories, grounded):
         'ZUSÄTZLICH:\n'
         '1) "injuries": Verletzungs- und Fitness-News zu BVB-Spielern der letzten 7 Tage aus den Quellen oben '
         '(neue Verletzung, voraussichtliche Rückkehr, zurück im Training, wieder fit, fraglich fürs nächste Spiel). '
-        'status: "injured" (fällt aus), "doubtful" (fraglich), "back" (zurück im Training), "fit" (wieder voll einsatzfähig).\n'
+        'status: "injured" (fällt aus), "doubtful" (fraglich), "back" (zurück im Training), "fit" (wieder voll einsatzfähig). '
+        'WICHTIG: Nur Infos, die wirklich in den Schlagzeilen bzw. der Suche stehen. Die Transfermarkt-Liste unten ist nur zur '
+        'Orientierung - wiederhole sie NICHT. Gibt es keine neuen Meldungen, gib eine leere Liste zurück.\n'
         '2) "briefing": 3-4 kurze, sachliche Sätze auf Deutsch mit den wichtigsten BVB-News des Tages '
         '(Ergebnisse, Verletzungen, Transfers). Nichts erfinden.\n\n'
         'Antworte NUR mit JSON in genau diesem Format:\n'
@@ -1137,7 +1194,7 @@ def build_prompt(headlines, squads, stories, grounded):
 
 def mod_news(state):
     prev = load('news.json', {}) or {}
-    stories = prev.get('stories') or []
+    stories = [s for s in prev.get('stories') or [] if source_tier(s.get('source'))]
     headlines_all = fetch_news()
     if not headlines_all:
         raise RuntimeError('Google News lieferte keine Schlagzeilen')
@@ -1161,10 +1218,12 @@ def mod_news(state):
     else:
         models = gemini_models(key)
         candidates = [h for h in headlines_all if bvb_re.search(h['title'])] or headlines_all
+        attempts = []
+        gem['attempts'] = attempts
         for grounded in (True, False):
             try:
                 prompt = build_prompt(candidates, state.get('squads') or load('squads.json'), stories, grounded)
-                data, model, links = gemini_call(key, models, prompt, grounded)
+                data, model, links = gemini_call(key, models[:2] if grounded else models, prompt, grounded, attempts)
                 result = data
                 gem.update({'used': True, 'model': model, 'grounded': grounded, 'at': iso(NOW),
                             'lastSuccess': iso(NOW), 'error': None, 'links': links[:12]})
@@ -1177,7 +1236,8 @@ def mod_news(state):
     briefing = prev.get('briefing')
     if result is not None:
         stories = merge_stories(stories, result.get('stories') or [], candidates, state)
-        gem['stories'] = len(result.get('stories') or [])
+        gem['dropped'] = state.get('dropped', [])[:10]
+        gem['stories'] = len(result.get('stories') or []) - len(state.get('dropped', []))
         injury_news = merge_injuries(injury_news, result.get('injuries') or [], state)
         gem['injuries'] = len(result.get('injuries') or [])
         b = (result.get('briefing') or '').strip()
@@ -1203,7 +1263,10 @@ def merge_stories(stories, found, headlines, state):
         status = f.get('status') if f.get('status') in STATUS_RANK else 'interest'
         if not player:
             continue
-        tier = f.get('tier') if f.get('tier') in (1, 2) else 2
+        tier = source_tier(f.get('source'))
+        if not tier:
+            state.setdefault('dropped', []).append('%s (%s)' % (player, f.get('source') or 'ohne Quelle'))
+            continue
         key = slug(player) + '|' + direction
         urls = []
         for i in f.get('headlines') or []:
@@ -1403,6 +1466,7 @@ def main():
         'totalChanges7d': sum(r['changes'] for r in runs
                               if r['at'] >= iso(NOW - timedelta(days=7))),
         'runner': 'github-actions' if os.environ.get('GITHUB_ACTIONS') else 'lokal',
+        'debug': DEBUG[:8],
     }
     save('status.json', status)
     log('Fertig: %d Änderungen in %ds' % (ch.total, run['seconds']))
