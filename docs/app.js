@@ -4,7 +4,7 @@
 'use strict';
 (() => {
   const REPO = 'sneaxx141108-gif/bvb09';
-  const FILES = ['status', 'squads', 'stats', 'history', 'transfers', 'rumors', 'news', 'matches', 'tables'];
+  const FILES = ['status', 'status-pc', 'squads', 'stats', 'history', 'transfers', 'rumors', 'news', 'matches', 'tables', 'u23'];
   const TZ = 'Europe/Berlin';
   const BVB = { name: 'Borussia Dortmund', crest: 'https://tmssl.akamaized.net/images/wappen/head/16.png' };
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -162,10 +162,49 @@
     const s = slug(name);
     return allPlayers().find((p) => slug(p.name) === s) || null;
   }
-  const statsOf = (k, id) => (((D.stats || {}).teams || {})[k] || {})[id];
   const TEAMNAME = { profis: 'Profis', u23: 'BVB II', u19: 'U19' };
 
-  const matchList = (k) => ((D.matches || {})[k === 'u23' ? 'u23' : 'profis'] || []).map(withLive);
+  // Tore live aus den Spielberichten (OpenLigaDB) – laufen weiter, auch wenn Transfermarkt nicht erreichbar ist
+  function liveGoals() {
+    if (S._lg && S._lgKey === S.lastLoad + Object.keys(S.live).length) return S._lg;
+    const by = {};
+    for (const m of matchList('profis')) {
+      if (!m.goals) continue;
+      const mine = m.isHome ? 'home' : 'away';
+      for (const g of m.goals) {
+        if (g.ownGoal || g.team !== mine || !g.scorer) continue;
+        const last = slug(g.scorer).split('-').pop();
+        by[last] = (by[last] || 0) + 1;
+      }
+    }
+    S._lg = by;
+    S._lgKey = S.lastLoad + Object.keys(S.live).length;
+    return by;
+  }
+  function statsOf(k, id) {
+    const st = (((D.stats || {}).teams || {})[k] || {})[id];
+    if (k !== 'profis') return st;
+    const p = findPlayer(k, id);
+    if (!p) return st;
+    const last = slug(p.name).split('-').pop();
+    const same = (team('profis').players || []).filter((x) => slug(x.name).split('-').pop() === last).length;
+    const g = same === 1 ? liveGoals()[last] || 0 : 0;
+    if (!st) return g ? { goals: g, apps: 0, assists: 0, minutes: 0 } : st;
+    return g > (st.goals || 0) ? Object.assign({}, st, { goals: g }) : st;
+  }
+  // Ausfaelle: Transfermarkt-Stand + neuere Gemini-Verletzungsnews ("wieder fit" / neue Verletzung)
+  function absencesOf(p) {
+    const base = (p.absences || []).slice();
+    const tmDate = (((D['status-pc'] || {}).lastRun) || (D.squads || {}).updatedAt || '').slice(0, 10);
+    const news = ((D.news || {}).injuryNews || []).filter((n) => slug(n.player) === slug(p.name)).sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+    if (!news || String(news.date) < tmDate) return base;
+    if (news.status === 'fit' || news.status === 'back') return base.filter((a) => a.type === 'ineligible');
+    if (news.status === 'injured' && !base.some((a) => a.type === 'injury')) base.push({ type: 'injury', text: (news.text || 'verletzt') + (news.source ? ` (laut ${news.source})` : ''), ai: true });
+    return base;
+  }
+  const isOut = (p) => absencesOf(p).some((a) => a.type !== 'ineligible');
+
+  const matchList = (k) => (k === 'u23' ? ((D.u23 || {}).matches || (D.matches || {}).u23 || []) : ((D.matches || {}).profis || [])).map(withLive);
   function withLive(m) {
     const l = S.live[m.id];
     return l ? Object.assign({}, m, l) : m;
@@ -479,7 +518,7 @@
     const brief = (D.news || {}).briefing;
     const pro = team('profis');
     const feed = transferFeed().slice(0, 3);
-    const missing = allPlayers().filter((p) => p.team === 'profis' && (p.absences || []).some((a) => a.type !== 'ineligible'));
+    const missing = allPlayers().filter((p) => p.team === 'profis' && isOut(p));
     const up = pro.players.filter((p) => p.prevValue && p.value > p.prevValue).length;
     const down = pro.players.filter((p) => p.prevValue && p.value < p.prevValue).length;
     const win = windowInfo();
@@ -503,7 +542,7 @@
       <a class="card card-link" href="#/mehr/lazarett" style="display:flex;flex-direction:column;gap:6px">
         <span class="label">Lazarett</span>
         <span class="stack-av">${missing.slice(0, 5).map((p) => img(pimg(p.img, 'medium'), 'avatar xs', p.name, initials(p.name))).join('') || '<span class="green" style="font-weight:700">Alle fit</span>'}</span>
-        <span style="font-size:11px" class="muted">${missing.length ? `${missing.filter((p) => p.absences.some((a) => a.type === 'injury')).length} verletzt · ${missing.filter((p) => p.absences.some((a) => a.type === 'suspension' || a.type === 'out')).length} gesperrt/fehlt` : 'Keine Ausfälle gemeldet'}</span>
+        <span style="font-size:11px" class="muted">${missing.length ? `${missing.filter((p) => absencesOf(p).some((a) => a.type === 'injury')).length} verletzt · ${missing.filter((p) => absencesOf(p).some((a) => a.type === 'suspension' || a.type === 'out')).length} gesperrt/fehlt` : 'Keine Ausfälle gemeldet'}</span>
       </a></div>`;
     if (bdays.length) {
       const b = bdays[0];
@@ -631,18 +670,31 @@
   }
 
   function vBilanz() {
-    const tr = D.transfers || {};
-    if (!tr.in && !tr.out) return '<div class="empty" style="margin-top:12px">Noch keine Transferdaten.</div>';
-    const ins = tr.in || [];
-    const outs = tr.out || [];
+    const tr0 = D.transfers || {};
+    if (!tr0.in && !tr0.out) return '<div class="empty" style="margin-top:12px">Noch keine Transferdaten.</div>';
+    const ins = [...(tr0.in || [])];
+    const outs = [...(tr0.out || [])];
+    // Offizielle Wechsel, die Gemini seit dem letzten Transfermarkt-Stand in den News gefunden hat
+    const known = new Set([...ins, ...outs].map((x) => slug(x.name)));
+    let addIn = 0;
+    let addOut = 0;
+    for (const s of (D.news || {}).stories || []) {
+      if (s.status !== 'official' || !['in', 'out'].includes(s.direction) || known.has(slug(s.player))) continue;
+      const item = { name: s.player, img: (s.playerInfo || {}).img, club: s.otherClub, fee: s.fee || 'k. A.', feeValue: s.feeValue, news: s.source };
+      if (s.direction === 'in') { ins.unshift(item); addIn += s.feeValue || 0; } else { outs.unshift(item); addOut += s.feeValue || 0; }
+    }
+    const tr = Object.assign({}, tr0, { income: (tr0.income || 0) + addOut, expense: (tr0.expense || 0) + addIn });
+    tr.balance = tr.income - tr.expense;
+    tr.incomeCount = outs.length;
+    tr.expenseCount = ins.length;
     const topIn = [...ins].sort((a, b) => (b.feeValue || 0) - (a.feeValue || 0))[0];
     const topOut = [...outs].sort((a, b) => (b.feeValue || 0) - (a.feeValue || 0))[0];
     const loans = outs.filter((x) => x.loan);
     const maxV = Math.max(tr.income || 0, tr.expense || 0) || 1;
     const row = (x, dir) => `<a class="li" ${x.id && findPlayer('profis', x.id) ? `href="#/spieler/profis/${x.id}"` : ''}>${img(pimg(x.img, 'medium'), 'avatar sm', x.name, initials(x.name))}
-      <span class="grow-1"><div class="t ellipsis">${esc(x.name)}</div><div class="s row" style="gap:6px">${crest(x.club, 'crest xs')}<span class="ellipsis">${dir === 'in' ? 'von' : 'zu'} ${esc((x.club || {}).name || '?')}</span></div></span>
+      <span class="grow-1"><div class="t ellipsis">${esc(x.name)}${x.news ? ' <span class="badge green" style="padding:2px 5px">NEU</span>' : ''}</div><div class="s row" style="gap:6px">${crest(x.club, 'crest xs')}<span class="ellipsis">${dir === 'in' ? 'von' : 'zu'} ${esc((x.club || {}).name || '?')}${x.news ? ' · laut ' + esc(x.news) : ''}</span></div></span>
       <span class="v ${x.feeValue ? '' : 'faint'}" style="font-weight:${x.feeValue ? 700 : 500}">${esc(String(x.fee || '–').replace(/^Leihgebühr:\s*/, 'Leihe '))}</span></a>`;
-    let out = `<p class="muted" style="font-size:12px;margin-top:12px">Saison ${esc(tr.seasonLabel || '')} · Quelle: Transfermarkt</p>`;
+    let out = `<p class="muted" style="font-size:12px;margin-top:12px">Saison ${esc(tr.seasonLabel || '')} · Quelle: Transfermarkt${addIn || addOut || ins.some((x) => x.news) || outs.some((x) => x.news) ? ' + neue offizielle Wechsel aus den News' : ''}</p>`;
     out += `<section class="card" style="margin-top:8px;display:flex;flex-direction:column;gap:12px">
       <div class="row" style="justify-content:space-between"><span><span class="label">Einnahmen</span><div class="display green" style="font-size:26px">${countEl(tr.income || 0, 'money')}</div><span class="faint" style="font-size:11px">${tr.incomeCount || outs.length} Abgänge</span></span>
       <span style="text-align:right"><span class="label">Ausgaben</span><div class="display red" style="font-size:26px">${countEl(tr.expense || 0, 'money')}</div><span class="faint" style="font-size:11px">${tr.expenseCount || ins.length} Zugänge</span></span></div>
@@ -728,7 +780,7 @@
     </button>`;
   }
   function tableView(key) {
-    const t = (D.tables || {})[key];
+    const t = key === 'u23' ? ((D.u23 || {}).table || (D.tables || {}).u23) : (D.tables || {})[key];
     if (!t || !t.rows || !t.rows.length) return '<div class="empty" style="margin-top:12px">Tabelle noch nicht verfügbar.</div>';
     const n = t.rows.length;
     const zone = (p) => key !== 'bl1' ? '' : p <= 4 ? 'z-cl' : p === 5 ? 'z-el' : p === 6 ? 'z-ecl' : p === n - 2 ? 'z-rel' : p > n - 2 ? 'z-ab' : '';
@@ -739,11 +791,10 @@
       ${key === 'bl1' ? '<p class="faint" style="font-size:11px;margin-top:8px"><span class="zone z-cl"></span> Champions League &nbsp; <span class="zone z-el"></span> Europa League &nbsp; <span class="zone z-ecl"></span> Conference League &nbsp; <span class="zone z-rel"></span> Relegation &nbsp; <span class="zone z-ab"></span> Abstieg</p>' : ''}`;
   }
   function scorerView(k) {
-    const st = ((D.stats || {}).teams || {})[k] || {};
-    const ps = (team(k).players || []).map((p) => Object.assign({ s: st[p.id] || {} }, p)).filter((p) => (p.s.goals || 0) + (p.s.assists || 0) > 0)
-      .sort((a, b) => (b.s.goals - a.s.goals) || (b.s.assists - a.s.assists));
+    const ps = (team(k).players || []).map((p) => Object.assign({ s: statsOf(k, p.id) || {} }, p)).filter((p) => (p.s.goals || 0) + (p.s.assists || 0) > 0)
+      .sort((a, b) => ((b.s.goals || 0) - (a.s.goals || 0)) || ((b.s.assists || 0) - (a.s.assists || 0)));
     if (!ps.length) return '<div class="empty" style="margin-top:12px">Noch keine Torschützen.</div>';
-    return `<p class="muted" style="font-size:12px;margin:12px 0 6px">Alle Wettbewerbe · Saison ${esc(String((D.stats || {}).season || ''))}/${esc(String(((D.stats || {}).season || 0) + 1).slice(2))}</p>
+    return `<p class="muted" style="font-size:12px;margin:12px 0 6px">Alle Wettbewerbe · Saison ${esc(String((D.stats || {}).season || ''))}/${esc(String(((D.stats || {}).season || 0) + 1).slice(2))}${k === 'profis' ? ' · Tore live aus den Spielberichten' : ''}</p>
       <div class="card" style="padding:4px 14px"><div class="list">${ps.map((p, i) => `<a class="li" href="#/spieler/${k}/${p.id}"><span class="rank">${i + 1}</span>${img(pimg(p.img, 'medium'), 'avatar sm', p.name, initials(p.name))}
       <span class="grow-1"><div class="t ellipsis">${esc(p.name)}</div><div class="s">${p.s.apps || 0} Spiele · ${p.s.minutes || 0}'</div></span>
       <span class="v"><span class="display yellow" style="font-size:22px">${p.s.goals || 0}</span> <span class="faint" style="font-weight:500">Tore</span><div class="faint" style="font-size:11px;font-weight:500">${p.s.assists || 0} Vorlagen</div></span></a>`).join('')}</div></div>`;
@@ -765,7 +816,7 @@
     const q = slug(UI.kaderSearch);
     const f = UI.kaderFilter;
     const ps = (team(k).players || []).filter((p) => (!q || slug(p.name).includes(q))
-      && (f === 'alle' || p.group === f || (f === 'fehlt' && (p.absences || []).some((a) => a.type !== 'ineligible'))));
+      && (f === 'alle' || p.group === f || (f === 'fehlt' && isOut(p))));
     if (!ps.length) return '<div class="empty" style="margin-top:12px">Kein Spieler gefunden.</div>';
     let out = '';
     for (const [g, l] of GROUPS) {
@@ -778,7 +829,7 @@
     return out;
   }
   function pCard(p, k) {
-    const ab = (p.absences || []).filter((a) => a.type !== 'ineligible');
+    const ab = absencesOf(p).filter((a) => a.type !== 'ineligible');
     const trend = p.prevValue && p.value !== p.prevValue ? `<small class="${p.value > p.prevValue ? 'green' : 'red'}">${p.value > p.prevValue ? '▲' : '▼'}</small>` : '';
     return `<a class="pcard" href="#/spieler/${k}/${p.id}">
       <span class="pcard-img">${img(pimg(p.img, 'big'), '', p.name, initials(p.name))}${p.number ? `<span class="pcard-num">${esc(p.number)}</span>` : ''}${ab.length ? `<span class="pcard-abs badge ${ab[0].type === 'injury' ? 'red' : 'amber'}">${ab[0].type === 'injury' ? 'VERLETZT' : 'FEHLT'}</span>` : ''}</span>
@@ -792,7 +843,7 @@
     const st = statsOf(k, id) || {};
     const hist = ((D.history || {}).players || {})[id] || [];
     const d = p.prevValue ? p.value - p.prevValue : 0;
-    const abs = p.absences || [];
+    const abs = absencesOf(p);
     const injNews = ((D.news || {}).injuryNews || []).filter((n) => slug(n.player) === slug(p.name));
     const stories = transferFeed().filter((it) => it.playerId === id || slug(it.name) === slug(p.name));
     let contract = '';
@@ -804,6 +855,7 @@
       contract = `<div style="display:flex;flex-direction:column;gap:6px;padding-bottom:10px;border-bottom:1px solid var(--line2)">
         <span class="kv" style="border:0;padding:0"><span>Vertrag bis</span><span>${fmtDate(p.contract)}</span></span>
         <span class="bar"><span style="width:${(frac * 100).toFixed(0)}%"></span></span>
+        ${p.contractNote ? `<span class="green" style="font-size:11px;font-weight:600">${esc(p.contractNote)}</span>` : ''}
         <span class="faint" style="font-size:11px">${months >= 12 ? `Noch ${Math.floor(months / 12)} ${Math.floor(months / 12) === 1 ? 'Jahr' : 'Jahre'}${months % 12 ? ` und ${months % 12} ${months % 12 === 1 ? 'Monat' : 'Monate'}` : ''}` : `Noch ${months} ${months === 1 ? 'Monat' : 'Monate'}`}</span></div>`;
     }
     let out = `<section class="phero">
@@ -820,6 +872,7 @@
         <span><span class="label">Marktwert</span><div class="display yellow" style="font-size:34px;line-height:1">${countEl(p.value || 0, 'money')}</div></span>
         ${d ? `<span class="badge" style="background:${d > 0 ? 'rgba(34,197,94,.14)' : 'rgba(240,82,82,.14)'};color:${d > 0 ? 'var(--green)' : 'var(--red)'};font-size:12px">${d > 0 ? '▲' : '▼'} ${money(d, { plus: 1, short: 1 })}</span>` : ''}
       </div>
+      ${p.valueNote ? `<span class="row faint" style="font-size:11px;gap:6px"><span class="ai-ico" style="width:18px;height:18px;border-radius:5px;animation:none">${I.ai}</span>Neuer Wert ${esc(p.valueNote)} · per Gemini</span>` : ''}
       ${hist.length >= 2 ? spark(hist) : '<span class="faint" style="font-size:12px">Der Marktwert-Verlauf wird beim nächsten Update geladen.</span>'}
     </section>`;
     out += `<section class="grid4" style="margin-top:12px">
@@ -933,9 +986,18 @@
         : `<p class="muted" style="font-size:12px;line-height:1.5">${gem.error ? `Gemini konnte zuletzt nicht antworten (${esc(gem.error)}). Die App läuft trotzdem weiter: Marktwerte, Spiele, Statistiken und Gerüchte kommen direkt von den Quellen.` : 'Liest Meldungen von Romano, Sky, kicker &amp; Co. und macht daraus Here-we-go-Karten, Verletzungs-News und das tägliche KI-Briefing.'}</p>
           ${gem.lastSuccess ? `<div class="kv"><span>Letzter Erfolg</span><span>${esc(rel(gem.lastSuccess))}</span></div>` : ''}`}
     </section>`;
-    out += `<section class="section"><div class="section-h"><h2>Quellen</h2></div><div class="card" style="padding:2px 14px">
-      ${mods.map(([, m]) => `<div class="mod">${m.ok === false ? I.bad : m.warning ? I.warn : I.ok}<span class="grow-1"><b>${esc(m.label)}</b>${m.ok === false ? `<div class="red" style="font-size:12px">${esc(m.error || 'Fehler')}</div>` : m.warning ? `<div class="amber" style="font-size:12px">${esc(m.warning)}</div>` : ''}<div class="faint" style="font-size:11px">${m.at ? 'aktualisiert ' + esc(rel(m.at)) : 'noch nie'}${m.seconds != null ? ' · ' + m.seconds + ' s' : ''}</div></span></div>`).join('')}
+    const modRow = (m) => `<div class="mod">${m.ok === false ? I.bad : m.warning ? I.warn : I.ok}<span class="grow-1"><b>${esc(m.label)}</b>${m.ok === false ? `<div class="red" style="font-size:12px">${esc(m.error || 'Fehler')}</div>` : m.warning ? `<div class="amber" style="font-size:12px">${esc(m.warning)}</div>` : ''}<div class="faint" style="font-size:11px">${m.at ? 'aktualisiert ' + esc(rel(m.at)) : 'noch nie'}${m.seconds != null ? ' · ' + m.seconds + ' s' : ''}</div></span></div>`;
+    out += `<section class="section"><div class="section-h"><h2>Automatisch (GitHub)</h2><span class="faint" style="font-size:11px">3× täglich</span></div><div class="card" style="padding:2px 14px">
+      ${mods.map(([, m]) => modRow(m)).join('')}
     </div></section>`;
+    const pc = D['status-pc'] || {};
+    const pcMods = Object.values(pc.modules || {});
+    const tmInfo = st.transfermarkt || {};
+    const aiAt = (D.squads || {}).aiUpdatedAt || tmInfo.aiUpdatedAt;
+    out += `<section class="section"><div class="section-h"><h2>Transfermarkt</h2><span class="faint" style="font-size:11px">Stand ${esc(pc.lastRun ? fmtDate(pc.lastRun) : '–')}</span></div>
+      <div class="abs info" style="margin-bottom:2px">${I.info}<span>Transfermarkt sperrt Server wie GitHub mit einem Bot-Schutz. Deshalb übernimmt <b>Gemini</b> neue Marktwerte, Vertragsverlängerungen und Verletzungen aus den Transfermarkt-, kicker- und Sky-News.${aiAt ? ` Letzte KI-Änderung am Kader: ${esc(rel(aiAt))}.` : ''} Tore zählt die App live aus den Spielberichten.</span></div>
+      ${pcMods.length ? `<div class="card" style="padding:2px 14px">${pcMods.map(modRow).join('')}</div>` : ''}
+    </section>`;
     const runs = (st.runs || []).slice(0, 30).reverse();
     if (runs.length) {
       const mx = Math.max(1, ...runs.map((r) => r.changes || 0));
@@ -956,8 +1018,7 @@
 
   function vStats() {
     const k = UI.statsTeam;
-    const st = ((D.stats || {}).teams || {})[k] || {};
-    const ps = (team(k).players || []).map((p) => Object.assign({ s: st[p.id] || {} }, p));
+    const ps = (team(k).players || []).map((p) => Object.assign({ s: statsOf(k, p.id) || {} }, p));
     const boards = [['goals', 'Tore'], ['assists', 'Vorlagen'], ['scorer', 'Scorerpunkte'], ['apps', 'Einsätze'], ['minutes', 'Spielminuten'], ['yellow', 'Gelbe Karten']];
     const val = (p, key) => (key === 'scorer' ? (p.s.goals || 0) + (p.s.assists || 0) : p.s[key] || 0);
     let out = pageHead('Statistiken', 'Saison ' + ((D.stats || {}).season || '') + ' · alle Wettbewerbe', '', '#/mehr');
@@ -1039,7 +1100,7 @@
     for (const p of allPlayers()) {
       if (seen.has(p.id)) continue;
       seen.add(p.id);
-      for (const a of p.absences || []) rows.push({ p, a });
+      for (const a of absencesOf(p)) rows.push({ p, a });
     }
     const inj = rows.filter((r) => r.a.type === 'injury');
     const sus = rows.filter((r) => r.a.type === 'suspension' || r.a.type === 'out');
@@ -1090,7 +1151,8 @@
   function vInfo() {
     return pageHead('Über die App', '', '', '#/mehr') + `<section class="card" style="display:flex;flex-direction:column;gap:10px;font-size:13px;line-height:1.55">
       <p><b>BVB 09</b> ist eine inoffizielle Fan-App. Sie ist nicht mit Borussia Dortmund verbunden. Namen, Wappen und Fotos gehören den jeweiligen Rechteinhabern.</p>
-      <p><b>So bleibt alles aktuell:</b> 3× täglich (8:17, 14:17 und 20:17 Uhr) läuft ein Programm auf GitHub. Es holt Kader, Marktwerte, Verträge, Verletzungen, Statistiken, Transfers und Gerüchte von Transfermarkt, Spiele und Tabellen von OpenLigaDB und Schlagzeilen über Google News. Die kostenlose <b>Gemini-KI</b> wertet die Meldungen aus und macht daraus Here-we-go-Karten, Verletzungs-News und das KI-Briefing.</p>
+      <p><b>So bleibt alles aktuell:</b> 3× täglich (8:17, 14:17 und 20:17 Uhr) läuft ein Programm auf GitHub. Es holt Spiele und Tabellen von OpenLigaDB und Schlagzeilen über Google News. Die kostenlose <b>Gemini-KI</b> wertet die Meldungen aus und macht daraus Here-we-go-Karten, Verletzungs-News, neue Marktwerte, Vertragsverlängerungen und das KI-Briefing. Tore zählt die App live aus den Spielberichten.</p>
+      <p><b>Transfermarkt</b> sperrt Server wie GitHub mit einem Bot-Schutz. Kader, Verträge und Statistiken stammen deshalb vom letzten direkten Abruf und werden über die KI-News ergänzt. Fotos und Wappen kommen von Transfermarkt und TheSportsDB.</p>
       <p><b>Gerüchte-Ampel:</b> Stufe 1 (grün) = sehr verlässlich (z. B. Fabrizio Romano, Sky, kicker, Ruhr Nachrichten, offizielle Meldungen). Stufe 2 (gelb) = meist verlässlich (z. B. Bild, Sport1, Transfermarkt-Gerüchteküche). Alles andere wird nicht angezeigt.</p>
       <p><b>Live-Ergebnisse</b> holt die App während der Spiele jede halbe Minute direkt von OpenLigaDB.</p>
       <p class="faint">Alle Angaben ohne Gewähr. KI-Zusammenfassungen können Fehler enthalten. Bei den Quellen kannst du jede Meldung nachlesen.</p>

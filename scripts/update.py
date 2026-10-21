@@ -238,9 +238,9 @@ def fmt_money(v):
     a = abs(v)
     sign = '-' if v < 0 else ''
     if a >= 1e9:
-        return sign + ('%.2f Mrd. €' % (a / 1e9)).replace('.', ',')
+        return sign + ('%.2f' % (a / 1e9)).replace('.', ',') + ' Mrd. €'
     if a >= 1e6:
-        return sign + ('%.2f Mio. €' % (a / 1e6)).replace('.', ',')
+        return sign + ('%.2f' % (a / 1e6)).replace('.', ',') + ' Mio. €'
     if a >= 1e3:
         return sign + '%d Tsd. €' % round(a / 1e3)
     return sign + '%d €' % a
@@ -918,9 +918,9 @@ def mod_matches(state):
             if is_bvb(m['team1']['teamName']) or is_bvb(m['team2']['teamName']):
                 profis.append(norm_match(m, l['name'], l['short']))
     profis.sort(key=lambda x: x['date'] or '')
-    out = {'season': SEASON, 'updatedAt': iso(NOW), 'leagues': leagues,
-           'profis': profis, 'u23': (prev.get('u23') or []), 'u23League': prev.get('u23League')}
+    out = {'season': SEASON, 'updatedAt': iso(NOW), 'leagues': leagues, 'profis': profis}
     tables = load('tables.json', {}) or {}
+    tables.pop('u23', None)
     try:
         tab = oldb('/getbltable/bl1/%d' % SEASON)
         rows = []
@@ -937,44 +937,49 @@ def mod_matches(state):
         tables['bl1'] = {'name': 'Bundesliga', 'rows': rows, 'updatedAt': iso(NOW)}
     except Exception as e:
         state['warnings'].append('Tabelle Bundesliga: %s' % e)
-    # BVB II ueber Transfermarkt
-    try:
-        page = tm_get('/x/spielplan/verein/17/saison_id/%d' % SEASON)
-        u23, comp_id = parse_fixtures_tm(page)
-        if u23:
-            out['u23'] = u23
-        else:
-            state['warnings'].append('BVB II Spiele: ' + page_hint(page, 'Spielplan BVB II nicht gefunden'))
-        if comp_id:
-            tpage = tm_get('/x/tabelle/wettbewerb/%s/saison_id/%d' % (comp_id, SEASON))
-            rows = parse_table_tm(tpage)
-            if rows:
-                league_name = next((m['comp'] for m in u23 if m['comp'] and 'Cup' not in m['comp']), 'Liga')
-                out['u23League'] = league_name
-                old_pos = next((r['pos'] for r in (tables.get('u23') or {}).get('rows', []) if r.get('isBVB')), None)
-                new_pos = next((r['pos'] for r in rows if r['isBVB']), None)
-                if old_pos and new_pos and old_pos != new_pos:
-                    state['changes'].add('table', '%s: BVB II jetzt auf Platz %d (vorher %d)' % (league_name, new_pos, old_pos))
-                tables['u23'] = {'name': league_name, 'rows': rows, 'updatedAt': iso(NOW)}
-    except Exception as e:
-        state['warnings'].append('BVB II Spiele: %s' % e)
-    # neue Ergebnisse
-    for key, label in (('profis', 'BVB'), ('u23', 'BVB II')):
-        old = {m['id']: m for m in prev.get(key) or []}
-        if not old:
-            continue
-        for m in out[key]:
-            o = old.get(m['id'])
-            if m['finished'] and m['score'] and (not o or not o.get('finished')):
-                state['changes'].add('matches', 'Ergebnis: %s %d:%d %s (%s)' % (
-                    m['home']['short'] or m['home']['name'], m['score'][0], m['score'][1],
-                    m['away']['short'] or m['away']['name'], m['comp']))
-            elif o and not m['finished'] and o.get('date') != m.get('date') and m.get('date'):
-                state['changes'].add('matches', 'Neue Anstoßzeit: %s – %s' % (
-                    m['home']['short'] or m['home']['name'], m['away']['short'] or m['away']['name']))
+    match_changes(prev.get('profis') or [], out['profis'], state)
     save('matches.json', out)
     save('tables.json', tables)
-    return {'ok': True, 'count': len(profis) + len(out['u23'])}
+    return {'ok': True, 'count': len(profis)}
+
+
+def match_changes(old_list, new_list, state):
+    old = {m['id']: m for m in old_list}
+    if not old:
+        return
+    for m in new_list:
+        o = old.get(m['id'])
+        if m['finished'] and m['score'] and (not o or not o.get('finished')):
+            state['changes'].add('matches', 'Ergebnis: %s %d:%d %s (%s)' % (
+                m['home']['short'] or m['home']['name'], m['score'][0], m['score'][1],
+                m['away']['short'] or m['away']['name'], m['comp']))
+        elif o and not m['finished'] and o.get('date') != m.get('date') and m.get('date'):
+            state['changes'].add('matches', 'Neue Anstoßzeit: %s – %s' % (
+                m['home']['short'] or m['home']['name'], m['away']['short'] or m['away']['name']))
+
+
+def mod_u23(state):
+    """BVB II (Regionalliga West) - Spielplan und Tabelle von Transfermarkt (nur ausserhalb von GitHub moeglich)."""
+    prev = load('u23.json', {}) or {}
+    page = tm_get('/x/spielplan/verein/17/saison_id/%d' % SEASON)
+    u23, comp_id = parse_fixtures_tm(page)
+    if not u23:
+        raise RuntimeError(page_hint(page, 'Spielplan BVB II nicht gefunden'))
+    out = {'season': SEASON, 'updatedAt': iso(NOW), 'matches': u23, 'league': prev.get('league'),
+           'table': prev.get('table')}
+    if comp_id:
+        rows = parse_table_tm(tm_get('/x/tabelle/wettbewerb/%s/saison_id/%d' % (comp_id, SEASON)))
+        if rows:
+            league = next((m['comp'] for m in u23 if m['comp'] and 'Cup' not in m['comp']), 'Liga')
+            old_pos = next((r['pos'] for r in (prev.get('table') or {}).get('rows', []) if r.get('isBVB')), None)
+            new_pos = next((r['pos'] for r in rows if r['isBVB']), None)
+            if old_pos and new_pos and old_pos != new_pos:
+                state['changes'].add('table', '%s: BVB II jetzt auf Platz %d (vorher %d)' % (league, new_pos, old_pos))
+            out['league'] = league
+            out['table'] = {'name': league, 'rows': rows, 'updatedAt': iso(NOW)}
+    match_changes(prev.get('matches') or [], u23, state)
+    save('u23.json', out)
+    return {'ok': True, 'count': len(u23)}
 
 
 # --------------------------------------------------------------------------- News + Gemini
@@ -984,6 +989,8 @@ NEWS_QUERIES = [
     ('BVB Verletzung', 'de'), ('BVB Training Rückkehr', 'de'), ('Borussia Dortmund', 'de'),
     ('Borussia Dortmund transfer', 'en'), ('Dortmund Fabrizio Romano', 'en'),
     ('Dortmund "here we go"', 'en'),
+    # Marktwert-News von Transfermarkt selbst (Transfermarkt sperrt Server, seine News sind aber oeffentlich)
+    ('Transfermarkt Marktwert Dortmund', 'de'), ('BVB Marktwert', 'de'), ('BVB Vertragsverlängerung', 'de'),
 ]
 
 
@@ -1041,8 +1048,8 @@ def fetch_news():
 
 
 def gemini_models(key):
-    preferred = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-flash-lite-latest',
-                 'gemini-2.5-flash-lite', 'gemini-2.0-flash']
+    """Neueste verfuegbare Flash-Modelle zuerst - so laeuft es auch, wenn Google alte Modelle abschaltet."""
+    aliases = ['gemini-flash-latest', 'gemini-flash-lite-latest']
     found = []
     try:
         data = http_json(GEMINI + '/models?pageSize=200', headers={'x-goog-api-key': key}, timeout=30)
@@ -1059,10 +1066,11 @@ def gemini_models(key):
     def ver(n):
         m = re.search(r'gemini-(\d+(?:\.\d+)?)', n)
         return (float(m.group(1)) if m else 0, 'lite' not in n, 'preview' not in n and 'exp' not in n)
+    found = [n for n in found if not re.search(r'-latest$', n)]
     found.sort(key=ver, reverse=True)
     order = []
-    for n in preferred + found:
-        if n not in order and (n in preferred[:2] or not found or n in found):
+    for n in found[:3] + aliases + found[3:]:
+        if n not in order:
             order.append(n)
     return order[:6]
 
@@ -1173,20 +1181,25 @@ def build_prompt(headlines, squads, stories, grounded):
         'WICHTIG: Nur Infos, die wirklich in den Schlagzeilen bzw. der Suche stehen. Die Transfermarkt-Liste unten ist nur zur '
         'Orientierung - wiederhole sie NICHT. Gibt es keine neuen Meldungen, gib eine leere Liste zurück.\n'
         '2) "briefing": 3-4 kurze, sachliche Sätze auf Deutsch mit den wichtigsten BVB-News des Tages '
-        '(Ergebnisse, Verletzungen, Transfers). Nichts erfinden.\n\n'
+        '(Ergebnisse, Verletzungen, Transfers). Nichts erfinden.\n'
+        '3) "marketValues": NEUE Transfermarkt-Marktwerte von Spielern aus den BVB-Kadern unten, wenn eine Schlagzeile '
+        'sie nennt (z. B. "Marktwert-Update: Nmecha steigt auf 65 Mio."). Wert in Euro als ganze Zahl. '
+        'Nur echte Zahlen aus den Meldungen, sonst leere Liste.\n\n'
         'Antworte NUR mit JSON in genau diesem Format:\n'
         '{"stories":[{"key":"spieler-name|in","player":"Vorname Nachname","role":"Spieler|Trainer|Funktionär",'
-        '"direction":"in|out|extension","otherClub":"Vereinsname oder null","status":"...",'
+        '"direction":"in|out|extension","otherClub":"Vereinsname oder null",'
+        '"otherClubEn":"englischer Vereinsname (für die Logo-Suche) oder null","status":"...",'
         '"fee":"z.B. 30 Mio. € oder null","feeValue":30000000,"bonus":"z.B. 5 Mio. € Boni oder null",'
         '"contractUntil":"2031 oder null","loan":false,"source":"Journalist oder Medium (Original)",'
         '"tier":1,"summary":"1-2 Sätze auf Deutsch, sachlich","date":"YYYY-MM-DD","headlines":[0,3]}],'
         '"injuries":[{"player":"Vorname Nachname","status":"injured|doubtful|back|fit",'
         '"text":"kurz auf Deutsch, z.B. Muskelfaserriss, fällt ca. 3 Wochen aus","expectedReturn":"z.B. Mitte November oder null",'
         '"source":"Medium","date":"YYYY-MM-DD"}],'
+        '"marketValues":[{"player":"Vorname Nachname","value":65000000,"previous":55000000,"source":"Transfermarkt","date":"YYYY-MM-DD"}],'
         '"briefing":"..."}\n'
         'Höchstens 20 Storys, die wichtigsten und neuesten zuerst. Keine Storys ohne BVB-Bezug.\n\n')
     task += 'AKTUELLE BVB-KADER (wer hier steht und wechseln soll = direction "out"):\n' + '\n'.join(names) + '\n\n'
-    task += 'LAUT TRANSFERMARKT FEHLEN AKTUELL:\n' + ('\n'.join(missing) or 'niemand') + '\n\n'
+    task += 'ZULETZT BEKANNTE AUSFÄLLE (nur zur Orientierung, nicht wiederholen):\n' + ('\n'.join(missing) or 'niemand') + '\n\n'
     task += 'BEREITS BEKANNTE STORYS:\n' + json.dumps(known, ensure_ascii=False) + '\n\n'
     task += 'SCHLAGZEILEN (Index | Datum | Medium | Titel):\n' + '\n'.join(lines)
     return task
@@ -1220,7 +1233,12 @@ def mod_news(state):
         candidates = [h for h in headlines_all if bvb_re.search(h['title'])] or headlines_all
         attempts = []
         gem['attempts'] = attempts
-        for grounded in (True, False):
+        pg = prev.get('gemini') or {}
+        # Google-Suche ist im Gratis-Kontingent nicht immer frei -> nach "Kontingent erschoepft" 3 Tage aussetzen
+        no_ground = (pg.get('noGroundingUntil') or '') > iso(NOW)
+        if no_ground:
+            gem['noGroundingUntil'] = pg['noGroundingUntil']
+        for grounded in ((False,) if no_ground else (True, False)):
             try:
                 prompt = build_prompt(candidates, state.get('squads') or load('squads.json'), stories, grounded)
                 data, model, links = gemini_call(key, models[:2] if grounded else models, prompt, grounded, attempts)
@@ -1231,6 +1249,8 @@ def mod_news(state):
             except Exception as e:
                 gem['error'] = str(e)[:300]
                 log('  Gemini (%s): %s' % ('mit Suche' if grounded else 'ohne Suche', e))
+                if grounded and any('(Suche)' in a and 'HTTP 429' in a for a in attempts):
+                    gem['noGroundingUntil'] = iso(NOW + timedelta(days=3))
         gem['headlinesAnalyzed'] = min(len(candidates), 90)
     injury_news = prev.get('injuryNews') or []
     briefing = prev.get('briefing')
@@ -1240,6 +1260,8 @@ def mod_news(state):
         gem['stories'] = len(result.get('stories') or []) - len(state.get('dropped', []))
         injury_news = merge_injuries(injury_news, result.get('injuries') or [], state)
         gem['injuries'] = len(result.get('injuries') or [])
+        gem['marketValues'] = len(result.get('marketValues') or [])
+        gem['applied'] = apply_ai_updates(result, stories, state)
         b = (result.get('briefing') or '').strip()
         if b:
             briefing = {'text': b[:900], 'at': iso(NOW)}
@@ -1276,9 +1298,10 @@ def merge_stories(stories, found, headlines, state):
                  'text': (f.get('summary') or '').strip()[:400]}
         s = by_key.get(key) or by_key.get(f.get('key') or '')
         club = (f.get('otherClub') or '').strip() or None
+        club_en = (f.get('otherClubEn') or '').strip() or None
         if not s:
             s = {'key': key, 'player': player, 'role': f.get('role') or 'Spieler', 'direction': direction,
-                 'otherClub': {'name': club} if club else None, 'status': status, 'fee': f.get('fee'),
+                 'otherClub': {'name': club, 'en': club_en} if club else None, 'status': status, 'fee': f.get('fee'),
                  'feeValue': f.get('feeValue') if isinstance(f.get('feeValue'), (int, float)) else None,
                  'bonus': f.get('bonus'), 'contractUntil': f.get('contractUntil'), 'loan': bool(f.get('loan')),
                  'source': f.get('source'), 'tier': tier, 'summary': entry['text'], 'date': entry['date'],
@@ -1301,7 +1324,7 @@ def merge_stories(stories, found, headlines, state):
         if isinstance(f.get('feeValue'), (int, float)) and f['feeValue'] != s.get('feeValue'):
             s['feeValue'] = f['feeValue']
         if club and not s.get('otherClub'):
-            s['otherClub'] = {'name': club}
+            s['otherClub'] = {'name': club, 'en': club_en}
         if f.get('source') and (tier < s.get('tier', 2) or changed):
             s['source'], s['tier'] = f['source'], tier
         if entry['text'] and entry['text'] != s.get('summary'):
@@ -1344,60 +1367,146 @@ def merge_injuries(current, found, state):
     return sorted(by.values(), key=lambda i: i.get('date') or '', reverse=True)
 
 
+def apply_ai_updates(result, stories, state):
+    """Marktwerte und Vertragsverlaengerungen aus den KI-ausgewerteten News in die Kaderdaten uebernehmen."""
+    squads = load('squads.json')
+    if not squads:
+        return 0
+    hist = load('history.json', {'players': {}, 'totals': {}}) or {'players': {}, 'totals': {}}
+    hist.setdefault('players', {})
+    hist.setdefault('totals', {})
+    index = {}
+    for key, team in (squads.get('teams') or {}).items():
+        for p in team.get('players', []):
+            index.setdefault(slug(p['name']), []).append((key, p))
+
+    def find(name):
+        s = slug(name)
+        if s in index:
+            return index[s]
+        last = s.split('-')[-1] if s else ''
+        hits = [v for k, vs in index.items() for v in vs if last and k.split('-')[-1] == last]
+        return hits if len({p['id'] for _, p in hits}) == 1 else []
+
+    changed, touched = 0, set()
+    for mv in result.get('marketValues') or []:
+        v = mv.get('value')
+        if not isinstance(v, (int, float)) or not 10000 <= v <= 400000000 or not source_tier(mv.get('source')):
+            continue
+        v = int(v)
+        hits = find(mv.get('player') or '')
+        old = hits[0][1].get('value') if hits else None
+        if not hits or old == v:
+            continue
+        for key, p in hits:
+            if p.get('value') == v:
+                continue
+            prev_v = p.get('value')
+            p['prevValue'], p['value'] = prev_v, v
+            p['valueNote'] = 'laut %s (%s)' % (mv.get('source'), mv.get('date') or TODAY)
+            team = squads['teams'][key]
+            if team.get('totalValue') is not None and prev_v is not None:
+                team['totalValue'] += v - prev_v
+                touched.add(key)
+            series = hist['players'].setdefault(p['id'], [])
+            if not series or series[-1][1] != v:
+                series.append([mv.get('date') or TODAY, v])
+        changed += 1
+        state['changes'].add('values', '%s %s: %s → %s (laut %s)' % (
+            '▲' if v > (old or 0) else '▼', hits[0][1]['name'], fmt_money(old), fmt_money(v), mv.get('source')))
+    for s in stories:
+        if s.get('status') != 'extension' or not s.get('contractUntil'):
+            continue
+        y = re.search(r'(20\d\d)', str(s['contractUntil']))
+        hits = find(s['player']) if y else []
+        new_c = '%s-06-30' % y.group(1) if y else None
+        done = False
+        for key, p in hits:
+            if (p.get('contract') or '') < new_c:
+                p['contract'] = new_c
+                p['contractNote'] = 'verlängert laut %s' % s.get('source')
+                done = True
+        if done:
+            changed += 1
+            state['changes'].add('squad', 'Vertrag verlängert: %s bis %s (laut %s)' % (s['player'], y.group(1), s.get('source')))
+    if changed:
+        for key in touched:
+            tot = hist['totals'].setdefault(key, [])
+            total = squads['teams'][key]['totalValue']
+            if tot and tot[-1][0] == TODAY:
+                tot[-1][1] = total
+            else:
+                tot.append([TODAY, total])
+        squads['aiUpdatedAt'] = iso(NOW)
+        save('squads.json', squads)
+        save('history.json', hist)
+    return changed
+
+
+TSDB = 'https://www.thesportsdb.com/api/v1/json/123'
+
+
+def tsdb(path):
+    time.sleep(2.2)  # freies Kontingent von TheSportsDB: hoechstens 30 Anfragen pro Minute
+    return http_json(TSDB + path, timeout=30)
+
+
 def enrich_stories(stories, state):
-    """Spielerfoto, Marktwert und Vereinswappen ergaenzen (Transfermarkt-Suche, mit Cache)."""
-    cache = load('cache.json', {'players': {}, 'clubs': {}}) or {'players': {}, 'clubs': {}}
+    """Spielerfoto (freigestellt) und Vereinswappen ergaenzen - ueber TheSportsDB (frei nutzbar), mit Cache."""
+    cache = load('cache.json', {}) or {}
+    cache.setdefault('tsdbPlayers', {})
+    cache.setdefault('tsdbClubs', {})
     squads = state.get('squads') or load('squads.json') or {}
     own = {}
     for key, team in (squads.get('teams') or {}).items():
         for p in team['players']:
             own[slug(p['name'])] = dict(p, team=key)
-    budget = 12
+    budget = 10
     for s in stories:
         ps = slug(s['player'])
-        if s.get('role', 'Spieler') == 'Spieler' and not s.get('playerInfo'):
+        if s.get('role', 'Spieler') == 'Spieler' and not (s.get('playerInfo') or {}).get('img'):
             if ps in own:
                 p = own[ps]
                 s['playerInfo'] = {'id': p['id'], 'img': p.get('img'), 'value': p.get('value'),
                                    'position': p.get('position'), 'age': p.get('age')}
-            elif ps in cache['players']:
-                s['playerInfo'] = cache['players'][ps]
+            elif ps in cache['tsdbPlayers']:
+                s['playerInfo'] = cache['tsdbPlayers'][ps]
             elif budget > 0:
                 budget -= 1
                 try:
-                    r = tm_search(s['player'])
-                    p = r.get('player')
+                    data = tsdb('/searchplayers.php?p=' + urllib.parse.quote(s['player']))
                     info = None
-                    if p and slug(p.get('name', '')).split('-')[-1] == ps.split('-')[-1]:
-                        info = {'id': p.get('id'), 'img': p.get('img'), 'value': p.get('value'),
-                                'position': p.get('position'), 'age': p.get('age'),
-                                'club': p.get('club')}
-                    cache['players'][ps] = info
+                    for pl in data.get('player') or []:
+                        if pl.get('strSport') == 'Soccer' and slug(pl.get('strPlayer', '')).split('-')[-1] == ps.split('-')[-1]:
+                            info = {'img': pl.get('strCutout') or pl.get('strThumb'), 'cutout': bool(pl.get('strCutout')),
+                                    'position': pl.get('strPosition'),
+                                    'club': {'name': pl.get('strTeam')} if pl.get('strTeam') else None}
+                            break
+                    cache['tsdbPlayers'][ps] = info
                     s['playerInfo'] = info
                 except Exception as e:
-                    log('  Suche %s: %s' % (s['player'], e))
+                    log('  Spielersuche %s: %s' % (s['player'], e))
         info = s.get('playerInfo') or {}
-        if info.get('img'):
+        if info.get('img') and 'transfermarkt' in info['img']:
             info['img'] = re.sub(r'/portrait/(small|medium|header)/', '/portrait/big/', info['img'])
         club = s.get('otherClub')
-        if not club and s['direction'] == 'in' and info.get('club') and info['club'].get('id') != '16':
+        if not club and s['direction'] == 'in' and info.get('club') and not is_bvb(info['club'].get('name') or ''):
             s['otherClub'] = club = dict(info['club'])
         if club and club.get('name') and not club.get('crest'):
-            cs = slug(club['name'])
-            if cs in cache['clubs']:
-                club.update(cache['clubs'][cs] or {})
-            elif info.get('club') and slug(info['club'].get('name', '')) == cs:
-                club.update({'id': info['club']['id'], 'crest': crest(info['club']['id'])})
+            query = club.get('en') or club['name']
+            cs = slug(query)
+            if cs in cache['tsdbClubs']:
+                club.update(cache['tsdbClubs'][cs] or {})
             elif budget > 0:
                 budget -= 1
                 try:
-                    r = tm_search(club['name'])
-                    c = r.get('club')
-                    cache['clubs'][cs] = {'id': c['id'], 'crest': c['crest']} if c else None
+                    data = tsdb('/searchteams.php?t=' + urllib.parse.quote(query))
+                    c = next((t for t in data.get('teams') or [] if t.get('strSport') == 'Soccer' and t.get('strBadge')), None)
+                    cache['tsdbClubs'][cs] = {'crest': c['strBadge']} if c else None
                     if c:
-                        club.update({'id': c['id'], 'crest': c['crest']})
+                        club['crest'] = c['strBadge']
                 except Exception as e:
-                    log('  Vereinssuche %s: %s' % (club['name'], e))
+                    log('  Vereinssuche %s: %s' % (query, e))
     save('cache.json', cache)
 
 
@@ -1426,17 +1535,36 @@ def next_runs():
     return out[:3]
 
 
+MODULES = [
+    # Server (GitHub + Gemini) - laeuft 3x taeglich automatisch
+    ('matches', 'Spiele & Tabelle (OpenLigaDB)', mod_matches, 'server'),
+    ('news', 'Transfer-News, Marktwerte & Verletzungen (Gemini)', mod_news, 'server'),
+    # Transfermarkt direkt - sperrt Server per Bot-Schutz, klappt nur von einem normalen Internetanschluss
+    ('squads', 'Kader & Marktwerte (Transfermarkt)', mod_squads, 'pc'),
+    ('history', 'Marktwert-Verlauf (Transfermarkt)', mod_history, 'pc'),
+    ('stats', 'Statistiken (Transfermarkt)', mod_stats, 'pc'),
+    ('transfers', 'Transferbilanz (Transfermarkt)', mod_transfers, 'pc'),
+    ('rumors', 'Gerüchteküche (Transfermarkt)', mod_rumors, 'pc'),
+    ('u23', 'BVB II Spiele & Tabelle (Transfermarkt)', mod_u23, 'pc'),
+]
+
+
 def main():
     started = time.time()
     state = {'changes': Changes(), 'warnings': []}
-    prev_status = load('status.json', {}) or {}
-    modules = [('squads', 'Kader & Marktwerte', mod_squads), ('history', 'Marktwert-Verlauf', mod_history),
-               ('stats', 'Statistiken', mod_stats), ('transfers', 'Transferbilanz', mod_transfers),
-               ('rumors', 'Gerüchteküche', mod_rumors), ('matches', 'Spiele & Tabellen', mod_matches),
-               ('news', 'Transfer-News & Gemini', mod_news)]
+    args = sys.argv[1:]
+    if os.environ.get('GITHUB_ACTIONS') and not args:
+        kind = 'server'
+    elif not args:
+        kind = 'pc'
+    else:
+        kind = 'server' if all(k in ('matches', 'news', 'all') for k in args) else 'pc'
+    status_file = 'status.json' if kind == 'server' else 'status-pc.json'
+    prev_status = load(status_file, {}) or {}
+    modules = [m for m in MODULES if m[3] == kind or 'all' in args]
     results = {}
-    only = set(sys.argv[1:])
-    for key, label, fn in modules:
+    only = set(a for a in args if a != 'all')
+    for key, label, fn, _ in modules:
         if only and key not in only:
             results[key] = (prev_status.get('modules') or {}).get(key, {'label': label, 'ok': None})
             continue
@@ -1466,9 +1594,17 @@ def main():
         'totalChanges7d': sum(r['changes'] for r in runs
                               if r['at'] >= iso(NOW - timedelta(days=7))),
         'runner': 'github-actions' if os.environ.get('GITHUB_ACTIONS') else 'lokal',
+        'kind': kind,
         'debug': DEBUG[:8],
     }
-    save('status.json', status)
+    if kind == 'server':
+        tm = load('status-pc.json', {}) or {}
+        status['transfermarkt'] = {'blocked': True, 'lastDirect': tm.get('lastRun'),
+                                   'aiUpdatedAt': (load('squads.json', {}) or {}).get('aiUpdatedAt')}
+    else:
+        status.pop('schedule')
+        status.pop('nextRuns')
+    save(status_file, status)
     log('Fertig: %d Änderungen in %ds' % (ch.total, run['seconds']))
 
 

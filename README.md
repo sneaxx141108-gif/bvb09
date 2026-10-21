@@ -13,14 +13,15 @@ Web-App fürs iPhone (in Safari öffnen → Teilen → „Zum Home-Bildschirm“
 
 ## So bleibt alles aktuell
 
-`.github/workflows/update.yml` startet `scripts/update.py` 3× täglich (8:17, 14:17 und 20:17 Uhr deutscher Zeit). Das Programm holt:
+`.github/workflows/update.yml` startet `scripts/update.py` 3× täglich (8:17, 14:17 und 20:17 Uhr deutscher Zeit):
 
 | Was | Woher |
 |---|---|
-| Kader, Marktwerte, Verträge, Verletzungen, Statistiken, Transfers, Gerüchte | Transfermarkt |
-| Spiele, Ergebnisse, Tabelle Bundesliga | OpenLigaDB |
-| Spiele und Tabelle BVB II | Transfermarkt |
-| Transfer- und Verletzungs-News | Google News, ausgewertet von der kostenlosen **Gemini-KI** |
+| Spiele, Ergebnisse, Torschützen, Tabelle Bundesliga | OpenLigaDB |
+| Transfer-Storys, Verletzungen, neue Marktwerte, Vertragsverlängerungen, KI-Briefing | Google News (u. a. Transfermarkt-, kicker-, Sky-News), ausgewertet von der kostenlosen **Gemini-KI** – nur vertrauenswürdige Quellen |
+| Fotos und Wappen für neue Spieler/Vereine | TheSportsDB |
+
+**Transfermarkt** sperrt Server (also auch GitHub) mit einem Bot-Schutz. Kader, Verträge, Statistiken, Transferbilanz, Gerüchteküche und BVB II stammen deshalb vom letzten direkten Abruf (`python scripts/update.py` auf einem normalen PC) und werden laufend über die KI-News ergänzt.
 
 Dafür muss unter *Settings → Secrets and variables → Actions* ein Secret namens `GEMINI_API_KEY` eingetragen sein. Ohne Gemini läuft alles weiter, nur die KI-Karten und das KI-Briefing fehlen dann.
 

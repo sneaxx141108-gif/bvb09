@@ -61,7 +61,7 @@ jobs:
             echo "Keine Aenderungen"
           else
             git commit -m "Daten-Update $(TZ=Europe/Berlin date '+%d.%m.%Y %H:%M')"
-            git pull --rebase origin main
+            git pull --rebase -X theirs origin main
             git push
           fi
 
