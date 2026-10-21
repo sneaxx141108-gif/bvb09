@@ -1,0 +1,85 @@
+name: Daten-Update
+
+on:
+  schedule:
+    # 3x taeglich um 8:17, 14:17 und 20:17 Uhr deutscher Zeit.
+    # GitHub rechnet in UTC. Deshalb stehen hier die Zeiten fuer Sommer- UND Winterzeit;
+    # der Schritt "Uhrzeit pruefen" laesst nur die jeweils passenden Laeufe durch.
+    - cron: '17 6 * * *'
+    - cron: '17 7 * * *'
+    - cron: '17 12 * * *'
+    - cron: '17 13 * * *'
+    - cron: '17 18 * * *'
+    - cron: '17 19 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/data/**'
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: daten-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+    steps:
+      - name: Uhrzeit pruefen
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          H=$(echo "${{ github.event.schedule }}" | awk '{print $2}')
+          OFF=$(TZ=Europe/Berlin date +%z | cut -c2-3)
+          L=$(( (10#$H + 10#$OFF) % 24 ))
+          echo "UTC-Stunde $H, Abstand $OFF Std. -> deutsche Stunde $L"
+          if [ "$L" = "8" ] || [ "$L" = "14" ] || [ "$L" = "20" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; else echo "run=false" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: actions/checkout@v7
+        if: steps.gate.outputs.run == 'true'
+
+      - name: Daten holen und mit Gemini auswerten
+        if: steps.gate.outputs.run == 'true'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python3 scripts/update.py
+
+      - name: Daten speichern
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          git config user.name "bvb09-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/data
+          if git diff --cached --quiet; then
+            echo "Keine Aenderungen"
+          else
+            git commit -m "Daten-Update $(TZ=Europe/Berlin date '+%d.%m.%Y %H:%M')"
+            git pull --rebase origin main
+            git push
+          fi
+
+      - uses: actions/configure-pages@v6
+        if: steps.gate.outputs.run == 'true'
+
+      - uses: actions/upload-pages-artifact@v5
+        if: steps.gate.outputs.run == 'true'
+        with:
+          path: docs
+
+  deploy:
+    needs: update
+    if: needs.update.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
