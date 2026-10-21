@@ -1108,9 +1108,9 @@ def gemini_call(key, models, prompt, grounded, attempts=None):
                 last = '%s%s: HTTP %s %s' % (model, ' (Suche)' if grounded else '', e.code, detail)
                 if attempts is not None:
                     attempts.append(last[:200])
-                # kurzer Engpass -> einmal warten; aufgebrauchtes Tageskontingent -> naechstes Modell
-                if e.code in (429, 503) and attempt == 0 and not re.search(r'quota|exhausted|limit: 0', detail, re.I):
-                    time.sleep(20)
+                # kurzes Limit -> einmal warten; Ueberlastung (503) oder leeres Kontingent -> gleich naechstes Modell
+                if e.code == 429 and attempt == 0 and not re.search(r'quota|exhausted|limit: 0', detail, re.I):
+                    time.sleep(15)
                     continue
                 break
             except Exception as e:
