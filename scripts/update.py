@@ -982,6 +982,139 @@ def mod_u23(state):
     return {'ok': True, 'count': len(u23)}
 
 
+# --------------------------------------------------------------------------- Statistiken (ESPN)
+ESPN = 'https://site.api.espn.com/apis/site/v2/sports/soccer'
+ESPN_CORE = 'https://sports.core.api.espn.com/v2/sports/soccer/leagues'
+ESPN_TEAM = 124
+ESPN_LEAGUES = [('ger.1', 'Bundesliga'), ('uefa.champions', 'Champions League'), ('ger.dfb_pokal', 'DFB-Pokal')]
+
+
+def espn_stat(cats, name):
+    for c in cats or []:
+        for s in c.get('stats') or []:
+            if s.get('name') == name:
+                return s.get('value') or 0
+    return 0
+
+
+def espn_group(pos):
+    p = (pos or '').lower()
+    return ('Torwart' if 'keeper' in p else 'Abwehr' if 'defen' in p or 'back' in p
+            else 'Sturm' if 'forward' in p or 'striker' in p or 'wing' in p else 'Mittelfeld')
+
+
+def mod_stats_espn(state):
+    """Einsaetze, Tore, Vorlagen, Karten und Minuten der Profis ueber die oeffentliche ESPN-Schnittstelle."""
+    prev = load('stats.json', {}) or {}
+    squads = load('squads.json') or {}
+    pro = (squads.get('teams') or {}).get('profis')
+    if not pro:
+        raise RuntimeError('keine Kaderdaten')
+    agg, errors = {}, []
+    for lg, label in ESPN_LEAGUES:
+        try:
+            r = http_json('%s/%s/teams/%d/roster' % (ESPN, lg, ESPN_TEAM), timeout=40)
+        except Exception as e:
+            errors.append('%s: %s' % (label, e))
+            continue
+        for a in r.get('athletes') or []:
+            cats = ((a.get('statistics') or {}).get('splits') or {}).get('categories') or []
+            d = agg.setdefault(a['id'], {'name': a.get('fullName') or a.get('displayName'), 'jersey': a.get('jersey'),
+                                         'pos': (a.get('position') or {}).get('name'), 'age': a.get('age'),
+                                         'apps': 0, 'subIn': 0, 'goals': 0, 'assists': 0, 'yellow': 0, 'red': 0,
+                                         'leagues': [], 'bl': lg == 'ger.1'})
+            apps = int(espn_stat(cats, 'appearances'))
+            d['apps'] += apps
+            d['subIn'] += int(espn_stat(cats, 'subIns'))
+            d['goals'] += int(espn_stat(cats, 'totalGoals'))
+            d['assists'] += int(espn_stat(cats, 'goalAssists'))
+            d['yellow'] += int(espn_stat(cats, 'yellowCards'))
+            d['red'] += int(espn_stat(cats, 'redCards'))
+            d['bl'] = d['bl'] or lg == 'ger.1'
+            if apps:
+                d['leagues'].append(lg)
+        time.sleep(0.5)
+    if not agg:
+        raise RuntimeError('; '.join(errors) or 'ESPN lieferte keine Daten')
+    # Minuten: einmal am Tag je Spieler und Wettbewerb abfragen
+    mins = prev.get('espnMinutes') or {}
+    if mins.get('date') != TODAY:
+        by = {}
+        for eid, d in agg.items():
+            total = 0
+            for lg in d['leagues']:
+                try:
+                    j = http_json('%s/%s/seasons/%d/types/1/athletes/%s/statistics' % (ESPN_CORE, lg, SEASON, eid), timeout=30)
+                    total += int(espn_stat((j.get('splits') or {}).get('categories'), 'minutes'))
+                except Exception:
+                    pass
+                time.sleep(0.25)
+            by[eid] = total
+        mins = {'date': TODAY, 'byId': by}
+    players = pro['players']
+    by_slug = {slug(p['name']): p for p in players}
+
+    def match(d):
+        s = slug(d['name'] or '')
+        if s in by_slug:
+            return by_slug[s]
+        last = s.split('-')[-1]
+        cands = [p for p in players if slug(p['name']).split('-')[-1] == last]
+        if len(cands) == 1:
+            return cands[0]
+        if d.get('jersey'):
+            cands = [p for p in cands or players if p.get('number') == str(d['jersey'])]
+            if len(cands) == 1:
+                return cands[0]
+        return None
+    teams_stats = prev.get('teams') or {}
+    old = teams_stats.get('profis') or {}
+    new = dict(old)
+    changed = matched = 0
+    known = {slug(p['name']) for t in (squads.get('teams') or {}).values() for p in t.get('players', [])}
+    added = []
+    for eid, d in agg.items():
+        p = match(d)
+        if not p:
+            if d['bl'] and d['apps'] > 0 and slug(d['name'] or '') not in known:
+                added.append((eid, d))
+            continue
+        matched += 1
+        o = old.get(p['id']) or {}
+        rec = dict(o)
+        rec.update({'apps': d['apps'], 'subIn': d['subIn'], 'goals': d['goals'], 'assists': d['assists'],
+                    'yellow': d['yellow'], 'red': d['red']})
+        m = (mins.get('byId') or {}).get(eid)
+        if m:
+            rec['minutes'] = m
+        if (o.get('apps'), o.get('goals'), o.get('assists'), o.get('minutes')) != (rec['apps'], rec['goals'], rec['assists'], rec.get('minutes')):
+            changed += 1
+        new[p['id']] = rec
+    if not matched:
+        raise RuntimeError('ESPN-Spieler konnten dem Kader nicht zugeordnet werden')
+    teams_stats['profis'] = new
+    # Neue Spieler aus dem offiziellen Bundesliga-Kader (mit Einsatz) automatisch in den App-Kader
+    for eid, d in added:
+        pid = 'espn-%s' % eid
+        players.append({'id': pid, 'name': d['name'], 'img': 'https://a.espncdn.com/i/headshots/soccer/players/full/%s.png' % eid,
+                        'position': d['pos'] or 'Spieler', 'group': espn_group(d['pos']), 'number': str(d['jersey']) if d.get('jersey') else None,
+                        'captain': False, 'absences': [], 'age': d.get('age'), 'value': None, 'joined': TODAY,
+                        'aiAdded': 'laut offiziellem Bundesliga-Kader (ESPN)'})
+        new[pid] = {'apps': d['apps'], 'subIn': d['subIn'], 'goals': d['goals'], 'assists': d['assists'],
+                    'yellow': d['yellow'], 'red': d['red'], 'minutes': (mins.get('byId') or {}).get(eid, 0)}
+        state['changes'].add('squad', 'Neu im Kader: %s (offizieller Bundesliga-Kader)' % d['name'])
+    if added:
+        pro['count'] = len(players)
+        save('squads.json', squads)
+    out = dict(prev)
+    out.update({'season': SEASON, 'updatedAt': iso(NOW), 'teams': teams_stats, 'espnMinutes': mins,
+                'source': {'profis': 'ESPN', 'u23': 'Transfermarkt', 'u19': 'Transfermarkt'}})
+    save('stats.json', out)
+    if changed:
+        state['changes'].add('stats', 'Statistiken aktualisiert bei %d Spielern (ESPN)' % changed, count=changed)
+    return {'ok': True, 'count': matched, 'warning': '; '.join(errors) or None}
+
+
 # --------------------------------------------------------------------------- News + Gemini
 NEWS_QUERIES = [
     ('BVB Transfer', 'de'), ('Borussia Dortmund Transfer', 'de'), ('BVB Wechsel', 'de'),
@@ -1173,6 +1306,9 @@ def build_prompt(headlines, squads, stories, grounded):
         '"interest" (Interesse/Kandidat), "denied" (dementiert/geplatzt), "extension" (Vertragsverlängerung).\n'
         'direction: "in" = kommt zum BVB, "out" = verlässt den BVB, "extension" = verlängert beim BVB.\n'
         'Erfinde NIEMALS Zahlen. Abloese/Boni nur, wenn eine Quelle sie nennt, sonst null.\n'
+        'probability = deine Einschätzung der Wechselwahrscheinlichkeit in Prozent (0-100) für Gerüchte '
+        '(interest/talks/advanced), abhängig von Status, Anzahl und Verlässlichkeit der Quellen; '
+        'official/herewego/extension = 100, denied = 0.\n'
         'Wenn eine Story schon bekannt ist (Liste unten), verwende denselben key und aktualisiere sie.\n\n'
         'ZUSÄTZLICH:\n'
         '1) "injuries": Verletzungs- und Fitness-News zu BVB-Spielern der letzten 7 Tage aus den Quellen oben '
@@ -1191,7 +1327,7 @@ def build_prompt(headlines, squads, stories, grounded):
         '"otherClubEn":"englischer Vereinsname (für die Logo-Suche) oder null","status":"...",'
         '"fee":"z.B. 30 Mio. € oder null","feeValue":30000000,"bonus":"z.B. 5 Mio. € Boni oder null",'
         '"contractUntil":"2031 oder null","loan":false,"source":"Journalist oder Medium (Original)",'
-        '"tier":1,"summary":"1-2 Sätze auf Deutsch, sachlich","date":"YYYY-MM-DD","headlines":[0,3]}],'
+        '"tier":1,"probability":40,"summary":"1-2 Sätze auf Deutsch, sachlich","date":"YYYY-MM-DD","headlines":[0,3]}],'
         '"injuries":[{"player":"Vorname Nachname","status":"injured|doubtful|back|fit",'
         '"text":"kurz auf Deutsch, z.B. Muskelfaserriss, fällt ca. 3 Wochen aus","expectedReturn":"z.B. Mitte November oder null",'
         '"source":"Medium","date":"YYYY-MM-DD"}],'
@@ -1203,6 +1339,27 @@ def build_prompt(headlines, squads, stories, grounded):
     task += 'BEREITS BEKANNTE STORYS:\n' + json.dumps(known, ensure_ascii=False) + '\n\n'
     task += 'SCHLAGZEILEN (Index | Datum | Medium | Titel):\n' + '\n'.join(lines)
     return task
+
+
+def ground_values(key, models, state, gem, attempts):
+    """Einmal am Tag: aktuelle Transfermarkt-Marktwerte der Profis per Google-Suche (Gemini) pruefen."""
+    squads = load('squads.json') or {}
+    pro = ((squads.get('teams') or {}).get('profis') or {})
+    names = [p['name'] for p in sorted(pro.get('players', []), key=lambda p: -(p.get('value') or 0))][:24]
+    if not names:
+        return
+    prompt = ('Nutze die Google-Suche (vor allem transfermarkt.de). Nenne für die folgenden Spieler von Borussia Dortmund '
+              'den AKTUELLEN Marktwert laut Transfermarkt. Nur Werte, die du in den Suchergebnissen wirklich findest - '
+              'nichts schätzen, nichts erfinden. Antworte NUR mit JSON in diesem Format: '
+              '{"marketValues":[{"player":"Vorname Nachname","value":65000000,"date":"YYYY-MM-DD","source":"Transfermarkt"}]}\n'
+              'Spieler: ' + ', '.join(names))
+    order = sorted(models, key=lambda m: 'lite' not in m)  # Lite-Modelle haben das groessere Gratis-Kontingent
+    data, model, links = gemini_call(key, order[:3], prompt, True, attempts)
+    if not links:
+        raise RuntimeError('Gemini hat keine Suchtreffer geliefert')
+    found = data.get('marketValues') or []
+    n = apply_ai_updates({'marketValues': found}, [], state, strict=True)
+    gem['valuesChecked'] = {'at': iso(NOW), 'found': len(found), 'applied': n, 'model': model}
 
 
 def mod_news(state):
@@ -1238,10 +1395,14 @@ def mod_news(state):
         no_ground = (pg.get('noGroundingUntil') or '') > iso(NOW)
         if no_ground:
             gem['noGroundingUntil'] = pg['noGroundingUntil']
+        ground_models = []
+        for m in [x for x in models if 'lite' in x][:1] + models[:2]:
+            if m not in ground_models:
+                ground_models.append(m)
         for grounded in ((False,) if no_ground else (True, False)):
             try:
                 prompt = build_prompt(candidates, state.get('squads') or load('squads.json'), stories, grounded)
-                data, model, links = gemini_call(key, models[:2] if grounded else models, prompt, grounded, attempts)
+                data, model, links = gemini_call(key, ground_models if grounded else models, prompt, grounded, attempts)
                 result = data
                 gem.update({'used': True, 'model': model, 'grounded': grounded, 'at': iso(NOW),
                             'lastSuccess': iso(NOW), 'error': None, 'links': links[:12]})
@@ -1249,9 +1410,20 @@ def mod_news(state):
             except Exception as e:
                 gem['error'] = str(e)[:300]
                 log('  Gemini (%s): %s' % ('mit Suche' if grounded else 'ohne Suche', e))
-                if grounded and any('(Suche)' in a and 'HTTP 429' in a for a in attempts):
+                if grounded and all('HTTP 429' in a for a in attempts if '(Suche)' in a) and any('(Suche)' in a for a in attempts):
                     gem['noGroundingUntil'] = iso(NOW + timedelta(days=3))
         gem['headlinesAnalyzed'] = min(len(candidates), 90)
+        # Einmal am Tag: Marktwerte per Google-Suche pruefen (nur wenn die Suche im Gratis-Kontingent klappt)
+        gem['valuesChecked'] = pg.get('valuesChecked')
+        if not gem.get('noGroundingUntil') and ((pg.get('valuesChecked') or {}).get('at') or '')[:10] != TODAY:
+            try:
+                ground_values(key, ground_models, state, gem, attempts)
+            except Exception as e:
+                log('  Marktwert-Suche: %s' % e)
+                gem['valuesError'] = str(e)[:200]
+                recent = [a for a in attempts[-3:] if '(Suche)' in a]
+                if recent and all('HTTP 429' in a for a in recent):
+                    gem['noGroundingUntil'] = iso(NOW + timedelta(days=3))
     injury_news = prev.get('injuryNews') or []
     briefing = prev.get('briefing')
     if result is not None:
@@ -1297,6 +1469,8 @@ def merge_stories(stories, found, headlines, state):
                 urls.append({'title': headlines[i]['title'], 'outlet': headlines[i]['outlet'], 'url': headlines[i]['url']})
         entry = {'date': f.get('date') or TODAY, 'status': status, 'source': f.get('source'),
                  'text': (f.get('summary') or '').strip()[:400]}
+        prob = f.get('probability')
+        prob = max(0, min(100, int(prob))) if isinstance(prob, (int, float)) else None
         s = by_key.get(key) or by_key.get(f.get('key') or '')
         club = (f.get('otherClub') or '').strip() or None
         club_en = (f.get('otherClubEn') or '').strip() or None
@@ -1305,7 +1479,7 @@ def merge_stories(stories, found, headlines, state):
                  'otherClub': {'name': club, 'en': club_en} if club else None, 'status': status, 'fee': f.get('fee'),
                  'feeValue': f.get('feeValue') if isinstance(f.get('feeValue'), (int, float)) else None,
                  'bonus': f.get('bonus'), 'contractUntil': f.get('contractUntil'), 'loan': bool(f.get('loan')),
-                 'source': f.get('source'), 'tier': tier, 'summary': entry['text'], 'date': entry['date'],
+                 'source': f.get('source'), 'tier': tier, 'probability': prob, 'summary': entry['text'], 'date': entry['date'],
                  'createdAt': TODAY, 'updatedAt': TODAY, 'updates': [entry], 'links': urls[:4]}
             stories.append(s)
             by_key[key] = s
@@ -1326,6 +1500,11 @@ def merge_stories(stories, found, headlines, state):
             s['feeValue'] = f['feeValue']
         if club and not s.get('otherClub'):
             s['otherClub'] = {'name': club, 'en': club_en}
+        if prob is not None and prob != s.get('probability'):
+            old_p = s.get('probability')
+            s['probability'] = prob
+            if old_p is not None and abs(prob - old_p) >= 15:
+                state['changes'].add('rumors', 'KI-Chance %s: %d%% → %d%%' % (player, old_p, prob))
         if f.get('source') and (tier < s.get('tier', 2) or changed):
             s['source'], s['tier'] = f['source'], tier
         if entry['text'] and entry['text'] != s.get('summary'):
@@ -1368,8 +1547,9 @@ def merge_injuries(current, found, state):
     return sorted(by.values(), key=lambda i: i.get('date') or '', reverse=True)
 
 
-def apply_ai_updates(result, stories, state):
-    """Marktwerte und Vertragsverlaengerungen aus den KI-ausgewerteten News in die Kaderdaten uebernehmen."""
+def apply_ai_updates(result, stories, state, strict=False):
+    """Marktwerte und Vertragsverlaengerungen aus den KI-ausgewerteten News in die Kaderdaten uebernehmen.
+    strict=True (Werte aus der Google-Suche): nur plausible Spruenge (hoechstens +/-60 %) werden uebernommen."""
     squads = load('squads.json')
     if not squads:
         return 0
@@ -1398,6 +1578,8 @@ def apply_ai_updates(result, stories, state):
         hits = find(mv.get('player') or '')
         old = hits[0][1].get('value') if hits else None
         if not hits or old == v:
+            continue
+        if strict and (not old or abs(v - old) / old > 0.6):
             continue
         for key, p in hits:
             if p.get('value') == v:
@@ -1577,6 +1759,7 @@ def next_runs():
 MODULES = [
     # Server (GitHub + Gemini) - laeuft 3x taeglich automatisch
     ('matches', 'Spiele & Tabelle (OpenLigaDB)', mod_matches, 'server'),
+    ('stats_espn', 'Statistiken & Kader (ESPN)', mod_stats_espn, 'server'),
     ('news', 'Transfer-News, Marktwerte & Verletzungen (Gemini)', mod_news, 'server'),
     # Transfermarkt direkt - sperrt Server per Bot-Schutz, klappt nur von einem normalen Internetanschluss
     ('squads', 'Kader & Marktwerte (Transfermarkt)', mod_squads, 'pc'),
@@ -1597,7 +1780,7 @@ def main():
     elif not args:
         kind = 'pc'
     else:
-        kind = 'server' if all(k in ('matches', 'news', 'all') for k in args) else 'pc'
+        kind = 'server' if all(k in ('matches', 'stats_espn', 'news', 'all') for k in args) else 'pc'
     status_file = 'status.json' if kind == 'server' else 'status-pc.json'
     prev_status = load(status_file, {}) or {}
     modules = [m for m in MODULES if m[3] == kind or 'all' in args]

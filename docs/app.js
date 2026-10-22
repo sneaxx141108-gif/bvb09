@@ -251,6 +251,7 @@
         from: dir === 'in' ? other : BVB, to: dir === 'out' ? other : BVB,
         fee: s.fee, feeValue: s.feeValue, bonus: s.bonus, contract: s.contractUntil, loan: s.loan,
         value: info.value || (sp && sp.value), source: s.source, tier: s.tier, date: s.date || s.updatedAt,
+        probability: (STATUS[s.status] || {}).big ? null : (s.probability != null ? s.probability : null), ai: true,
         summary: s.summary, updates: s.updates || [], links: s.links || [], playerId: info.id || (sp && sp.id), team: sp && sp.team,
       });
       seen.add(slug(s.player) + '|' + (dir === 'extension' ? 'in' : dir));
@@ -275,9 +276,10 @@
         });
       }
     }
+    const staleBefore = berlinYMD(new Date(Date.now() - 30 * 864e5));
     for (const r of (D.rumors || {}).items || []) {
       const key = slug(r.name) + '|in';
-      if (seen.has(key)) continue;
+      if (seen.has(key) || (r.lastSource && r.lastSource < staleBefore)) continue;
       seen.add(key);
       out.push({
         key, kind: 'rumor', status: 'rumor', dir: 'in', name: r.name, img: pimg(r.img, 'big'), age: r.age, position: r.position,
@@ -325,8 +327,9 @@
         <div><span>Quelle</span><b>${it.date ? F.dm.format(toDate(it.date)) : '–'}</b></div>`;
     }
     const third = it.contract ? `<div><span>Vertrag</span><b>bis ${esc(String(it.contract).slice(0, 4))}</b></div>` : `<div><span>Marktwert</span><b>${money(it.value, { short: 1 })}</b></div>`;
+    const second = it.probability != null && !it.bonus ? `<div><span>KI-Chance</span><b class="amber">${it.probability} %</b></div>` : `<div><span>Boni</span><b>${esc(it.bonus || 'k. A.')}</b></div>`;
     return `<div><span>${it.loan ? 'Leihgebühr' : 'Ablöse'}</span><b class="${STATUS[it.status] && STATUS[it.status].big ? 'yellow' : ''}">${esc(feeText(it))}</b></div>
-      <div><span>Boni</span><b>${esc(it.bonus || 'k. A.')}</b></div>${third}`;
+      ${second}${third}`;
   }
   const metaOf = (it) => [it.age ? it.age + ' Jahre' : '', it.position, it.flags && it.flags[0] ? it.flags[0].name : ''].filter(Boolean).join(' · ');
   const wordOf = (it, n) => {
@@ -345,7 +348,7 @@
         ${it.img ? img(it.img, 'tc-img', it.name, 'sil') : (big ? SIL : SIL_SOFT)}
         ${big ? `<div class="tc-stamp" aria-hidden="true">${st.stamp}</div>` : ''}
         <span class="tc-badge" style="${big ? '' : 'top:18px'}">${statusBadge(it)}</span>
-        ${!big && it.probability != null ? `<div class="tc-prob">${ring(it.probability / 100, 44, 5, 'var(--warn)')}<div><b>${it.probability}%</b><span>Chance</span></div></div>` : ''}
+        ${!big && it.probability != null ? `<div class="tc-prob">${ring(it.probability / 100, 44, 5, 'var(--warn)')}<div><b>${it.probability}%</b><span>${it.ai ? 'KI-Chance' : 'Chance'}</span></div></div>` : ''}
         <div class="tc-flow">${crest(it.from)}<span class="tc-arrow" aria-hidden="true"></span>${crest(it.to)}<span class="sr">${esc(it.dir === 'out' ? 'Wechsel vom BVB zu ' + ((it.to || {}).name || '?') : 'Wechsel von ' + ((it.from || {}).name || '?') + ' zum BVB')}</span></div>
       </div>
       <div class="tc-body">
@@ -1062,6 +1065,7 @@
         <div class="kv"><span>Transfer-Storys</span><span>${gem.stories || 0}</span></div>
         <div class="kv"><span>Verletzungs-News</span><span>${gem.injuries || 0}</span></div>
         <div class="kv"><span>Marktwerte &amp; Verträge übernommen</span><span>${gem.applied || 0}</span></div>
+        <div class="kv"><span>Marktwert-Check per Google-Suche</span><span>${gem.valuesChecked ? `${esc(rel(gem.valuesChecked.at))} · ${gem.valuesChecked.applied || 0} neu` : gem.noGroundingUntil ? 'pausiert (Gratis-Kontingent)' : 'noch nicht gelaufen'}</span></div>
         <div class="kv"><span>Modell</span><span>${esc(gem.model || '')}${gem.grounded ? ' · mit Suche' : ''}</span></div>`
         : `<p class="muted" style="font-size:12px;line-height:1.55;margin-top:6px">${gem.error ? `Gemini konnte zuletzt nicht antworten (${esc(gem.error)}). Spiele, Tabellen und Live-Tore laufen trotzdem weiter.` : 'Liest Meldungen von Romano, Sky, kicker &amp; Co. und macht daraus Here-we-go-Karten, Verletzungs-News, neue Marktwerte und das KI-Briefing.'}</p>`}
     </section>`;
@@ -1095,7 +1099,8 @@
     const ps = (team(k).players || []).map((p) => Object.assign({ s: statsOf(k, p.id) || {} }, p));
     const boards = [['goals', 'Tore'], ['assists', 'Vorlagen'], ['scorer', 'Scorerpunkte'], ['apps', 'Einsätze'], ['minutes', 'Spielminuten'], ['yellow', 'Gelbe Karten']];
     const val = (p, key) => (key === 'scorer' ? (p.s.goals || 0) + (p.s.assists || 0) : p.s[key] || 0);
-    let out = pageHead('Statis<em>tiken</em>', 'Saison ' + esc(String((D.stats || {}).season || '')) + ' · alle Wettbewerbe', '', '#/mehr');
+    const src = ((D.stats || {}).source || {})[k] || 'Transfermarkt';
+    let out = pageHead('Statis<em>tiken</em>', 'Saison ' + esc(String((D.stats || {}).season || '')) + ' · Quelle: ' + esc(src), '', '#/mehr');
     out += teamSwitch('statsTeam', [['profis', 'Profis', ''], ['u23', 'BVB II', ''], ['u19', 'U19', '']]);
     out += `<div class="grid3" style="margin-top:12px"><div class="stat-box"><b class="yellow">${ps.reduce((s, p) => s + (p.s.goals || 0), 0)}</b><span>Tore</span></div><div class="stat-box"><b>${ps.reduce((s, p) => s + (p.s.assists || 0), 0)}</b><span>Vorlagen</span></div><div class="stat-box"><b>${ps.filter((p) => p.s.apps).length}</b><span>Eingesetzt</span></div></div>`;
     for (const [key, label] of boards) {
