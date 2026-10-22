@@ -1319,8 +1319,9 @@ def build_prompt(headlines, squads, stories, grounded):
         '2) "briefing": 3-4 kurze, sachliche Sätze auf Deutsch mit den wichtigsten BVB-News des Tages '
         '(Ergebnisse, Verletzungen, Transfers). Nichts erfinden.\n'
         '3) "marketValues": NEUE Transfermarkt-Marktwerte von Spielern aus den BVB-Kadern unten, wenn eine Schlagzeile '
-        'sie nennt (z. B. "Marktwert-Update: Nmecha steigt auf 65 Mio."). Wert in Euro als ganze Zahl. '
-        'Nur echte Zahlen aus den Meldungen, sonst leere Liste.\n\n'
+        'den neuen Wert als Zahl nennt (z. B. "Marktwert-Update: Nmecha steigt auf 65 Mio."). '
+        'Wert in Euro als ganze Zahl, date = Datum der Schlagzeile, headline = ihr Index. Nur Zahlen, die so in der '
+        'Schlagzeile stehen - keine Ablösesummen, keine Angebote, nichts ausrechnen. Sonst leere Liste.\n\n'
         'Antworte NUR mit JSON in genau diesem Format:\n'
         '{"stories":[{"key":"spieler-name|in","player":"Vorname Nachname","role":"Spieler|Trainer|Funktionär",'
         '"direction":"in|out|extension","otherClub":"Vereinsname oder null",'
@@ -1331,7 +1332,8 @@ def build_prompt(headlines, squads, stories, grounded):
         '"injuries":[{"player":"Vorname Nachname","status":"injured|doubtful|back|fit",'
         '"text":"kurz auf Deutsch, z.B. Muskelfaserriss, fällt ca. 3 Wochen aus","expectedReturn":"z.B. Mitte November oder null",'
         '"source":"Medium","date":"YYYY-MM-DD"}],'
-        '"marketValues":[{"player":"Vorname Nachname","value":65000000,"previous":55000000,"source":"Transfermarkt","date":"YYYY-MM-DD"}],'
+        '"marketValues":[{"player":"Vorname Nachname","value":65000000,"previous":55000000,"source":"Transfermarkt",'
+        '"date":"YYYY-MM-DD","headline":12}],'
         '"briefing":"..."}\n'
         'Höchstens 20 Storys, die wichtigsten und neuesten zuerst. Keine Storys ohne BVB-Bezug.\n\n')
     task += 'AKTUELLE BVB-KADER (wer hier steht und wechseln soll = direction "out"):\n' + '\n'.join(names) + '\n\n'
@@ -1362,6 +1364,133 @@ def ground_values(key, models, state, gem, attempts):
     gem['valuesChecked'] = {'at': iso(NOW), 'found': len(found), 'applied': n, 'model': model}
 
 
+# Marktwert-Artikel: Transfermarkt sperrt Server, aber Medien berichten nach jedem Marktwert-Update ausfuehrlich
+BING_NEWS = 'https://www.bing.com/news/search'
+VALUE_SEARCHES = ['BVB Marktwerte', 'Borussia Dortmund Marktwert']
+NO_ARTICLE_HOSTS = re.compile(r'(^|\.)(transfermarkt\.\w+|msn\.com|news\.google\.com|bing\.com)$')
+
+
+def bing_news(q):
+    """Bing News als RSS: direkte Artikel-Links samt Anrisstext."""
+    url = BING_NEWS + '?' + urllib.parse.urlencode({'q': q, 'format': 'rss', 'setlang': 'de', 'cc': 'DE'})
+    root = ET.fromstring(http_get(url, retries=1))
+    out = []
+    for it in root.iter('item'):
+        link = it.findtext('link') or ''
+        real = urllib.parse.parse_qs(urllib.parse.urlparse(link).query).get('url', [link])[0]
+        try:
+            dt = email.utils.parsedate_to_datetime(it.findtext('pubDate'))
+        except Exception:
+            continue
+        host = (urllib.parse.urlparse(real).hostname or '').replace('www.', '')
+        outlet = next((c.text for c in it if c.tag.endswith('Source') and c.text), None) or host
+        out.append({'title': text(it.findtext('title')), 'desc': text(it.findtext('description')),
+                    'url': real, 'host': host, 'date': iso(dt), 'outlet': outlet.strip()})
+    return out
+
+
+def article_text(url):
+    """Lesbarer Text eines frei zugaenglichen Artikels (JSON-LD articleBody oder die Absaetze)."""
+    page = http_get(url, timeout=25, retries=0)
+    bodies = []
+    for m in re.finditer(r'"articleBody"\s*:\s*"((?:[^"\\]|\\.)*)"', page):
+        try:
+            bodies.append(text(json.loads('"%s"' % m.group(1))))
+        except ValueError:
+            pass
+    body = '\n'.join(bodies)
+    if len(body) > 400:
+        return body
+    page = re.sub(r'(?is)<(script|style|noscript)\b.*?</\1>', ' ', page)
+    paras = [text(m.group(2)) for m in re.finditer(r'(?is)<(p|li|h2|h3|td)\b[^>]*>(.*?)</\1>', page)]
+    return '\n'.join(p for p in paras if len(p) > 15)
+
+
+def relevant_text(body, lasts, limit=6000):
+    """Nur die Saetze, die Spieler, Marktwerte oder Betraege nennen - spart Gemini-Kontingent."""
+    keep, seen = [], set()
+    for line in body.split('\n'):
+        k = slug(line)
+        if not k or k in seen:
+            continue
+        seen.add(k)
+        if set(k.split('-')) & lasts or VALUE_WORD.search(line) or re.search(r'Mio|Million', line):
+            keep.append(line.strip())
+    return '\n'.join(keep)[:limit]
+
+
+def read_value_articles(key, models, state, gem, prev):
+    """Neue Marktwerte aus frei lesbaren Artikeln (Bild, RevierSport ...): Gemini liest, der Code prueft jede Zahl."""
+    done = list(prev.get('valueArticles') or [])
+    squads = load('squads.json') or {}
+    pro = ((squads.get('teams') or {}).get('profis') or {}).get('players') or []
+    if not pro:
+        return done
+    seen = {a['url'] for a in done}
+    names = sorted(p['name'] for p in pro)
+    start = (int(time.time() // (8 * 3600)) * 6) % len(names)  # reihum 6 Spieler pro Update
+    queries = VALUE_SEARCHES + ['%s Marktwert' % n for n in (names + names)[start:start + min(6, len(names))]]
+    lasts = {slug(n).split('-')[-1] for n in names}
+    about = re.compile(r'\b(?:BVB|Dortmund|' + '|'.join(re.escape(n.split()[-1]) for n in names) + r')\b', re.I)
+    cutoff = iso(NOW - timedelta(days=30))
+    fresh = {}
+    for q in queries:
+        try:
+            items = bing_news(q)
+        except Exception as e:
+            log('  Bing News "%s": %s' % (q, e))
+            continue
+        for a in items:
+            blurb = a['title'] + ' ' + a['desc']
+            if (a['url'] in seen or a['date'] < cutoff or NO_ARTICLE_HOSTS.search(a['host'])
+                    or not VALUE_WORD.search(blurb) or not about.search(blurb)):
+                continue
+            fresh[a['url']] = a
+        time.sleep(1)
+    articles, entries = [], []
+    for a in sorted(fresh.values(), key=lambda x: x['date'], reverse=True)[:6]:
+        body = ''
+        try:
+            body = article_text(a['url'])
+        except Exception as e:
+            log('  Artikel %s: %s' % (a['host'], e))
+        usable = bool(TM_SOURCE.search(body))  # nur Artikel, die sich auf die Transfermarkt-Bewertung beziehen
+        entries.append({'url': a['url'], 'title': a['title'], 'outlet': a['outlet'], 'date': a['date'], 'usable': usable})
+        if usable:
+            articles.append(dict(a, text=relevant_text(body, lasts)))
+    info = {'at': iso(NOW), 'searches': len(queries), 'new': len(fresh), 'read': len(articles), 'found': 0, 'applied': 0}
+    try:
+        evaluate_value_articles(key, models, state, gem, articles, pro, info)
+    except Exception as e:
+        info['error'] = str(e)[:200]
+        entries = [x for x in entries if not x['usable']]  # beim naechsten Update noch einmal versuchen
+    gem['valueArticles'] = info
+    return (entries + done)[:80]
+
+
+def evaluate_value_articles(key, models, state, gem, articles, pro, info):
+    if articles:
+        cur = '\n'.join('- %s: %s' % (p['name'], fmt_money(p.get('value'))) for p in pro)
+        arts = '\n\n'.join('[%d] %s | %s | %s\n%s' % (i, a['date'][:10], a['outlet'], a['title'], a['text'])
+                           for i, a in enumerate(articles))
+        prompt = ('Du liest Artikel über neue Transfermarkt-Marktwerte. Heute ist %s.\n'
+                  'Spieler von Borussia Dortmund mit ihrem bisher gespeicherten Marktwert:\n%s\n\n'
+                  'AUFGABE: Finde in den Artikeln den NEUEN, aktuellen Transfermarkt-Marktwert von Spielern dieser Liste.\n'
+                  '- Nur Werte, die im Artikel ausdrücklich als neuer bzw. aktueller Marktwert stehen. '
+                  'Bei "von 28 auf 22 Mio." ist 22 Mio. der neue Wert.\n'
+                  '- Keine Ablösesummen, Angebote, Ausstiegsklauseln, Gehälter, keine Werte anderer Portale (z. B. CIES), '
+                  'keine Schätzungen von Vereinen oder Medien ("taxiert", "Preisschild") und keine älteren Werte aus Rückblicken.\n'
+                  '- quote = der Satz oder Satzteil WÖRTLICH aus dem Artikel, in dem Spielername und neuer Wert stehen.\n'
+                  '- value in Euro als ganze Zahl, article = Nummer des Artikels.\n'
+                  'Antworte NUR mit JSON: {"marketValues":[{"player":"Vorname Nachname","value":22000000,'
+                  '"article":0,"quote":"..."}]}\nGibt es keine neuen Werte, gib eine leere Liste zurück.\n\n'
+                  'ARTIKEL:\n%s' % (TODAY, cur, arts))
+        data, model, _ = gemini_call(key, models, prompt, False, gem.setdefault('attempts', []))
+        mvs = [dict(m, source='Transfermarkt') for m in data.get('marketValues') or [] if isinstance(m, dict)]
+        info.update({'found': len(mvs), 'model': model})
+        info['applied'] = apply_ai_updates({'marketValues': mvs}, [], state, evidence=articles)
+
+
 def mod_news(state):
     prev = load('news.json', {}) or {}
     stories = [s for s in prev.get('stories') or [] if source_tier(s.get('source'))]
@@ -1387,7 +1516,7 @@ def mod_news(state):
         gem['error'] = 'Kein GEMINI_API_KEY gesetzt'
     else:
         models = gemini_models(key)
-        candidates = [h for h in headlines_all if bvb_re.search(h['title'])] or headlines_all
+        candidates = ([h for h in headlines_all if bvb_re.search(h['title'])] or headlines_all)[:90]
         attempts = []
         gem['attempts'] = attempts
         pg = prev.get('gemini') or {}
@@ -1412,7 +1541,7 @@ def mod_news(state):
                 log('  Gemini (%s): %s' % ('mit Suche' if grounded else 'ohne Suche', e))
                 if grounded and all('HTTP 429' in a for a in attempts if '(Suche)' in a) and any('(Suche)' in a for a in attempts):
                     gem['noGroundingUntil'] = iso(NOW + timedelta(days=3))
-        gem['headlinesAnalyzed'] = min(len(candidates), 90)
+        gem['headlinesAnalyzed'] = len(candidates)
         # Einmal am Tag: Marktwerte per Google-Suche pruefen (nur wenn die Suche im Gratis-Kontingent klappt)
         gem['valuesChecked'] = pg.get('valuesChecked')
         if not gem.get('noGroundingUntil') and ((pg.get('valuesChecked') or {}).get('at') or '')[:10] != TODAY:
@@ -1434,10 +1563,22 @@ def mod_news(state):
         gem['injuries'] = len(result.get('injuries') or [])
         gem['marketValues'] = len(result.get('marketValues') or [])
         enrich_stories(stories, state)  # Fotos/Positionen vorher holen - neue Spieler kommen so mit Bild in den Kader
-        gem['applied'] = apply_ai_updates(result, stories, state)
+        # Ohne Google-Suche muss jeder Marktwert woertlich in einer Schlagzeile stehen (Schutz gegen erfundene Zahlen)
+        gem['applied'] = apply_ai_updates(result, stories, state, strict=gem['grounded'],
+                                          evidence=None if gem['grounded'] else candidates)
         b = (result.get('briefing') or '').strip()
         if b:
             briefing = {'text': b[:900], 'at': iso(NOW)}
+    # Neue Marktwerte aus Artikeln (Gemini liest, jede Zahl wird gegen den Artikeltext geprueft)
+    value_articles = prev.get('valueArticles') or []
+    if key:
+        try:
+            value_articles = read_value_articles(key, models, state, gem, prev)
+        except Exception as e:
+            log('  Marktwert-Artikel: %s' % e)
+            gem['valueArticles'] = {'at': iso(NOW), 'error': str(e)[:200]}
+        gem['valuesApplied'] = state.get('valuesApplied', 0)
+        gem['valuesRejected'] = state.get('valuesRejected', [])[:10]
     # Alte Storys aufraeumen (45 Tage ohne Neuigkeit), Verletzungs-News nach 21 Tagen
     limit = (NOW - timedelta(days=45)).strftime('%Y-%m-%d')
     stories = [s for s in stories if (s.get('updatedAt') or s.get('createdAt') or TODAY) >= limit][:60]
@@ -1445,7 +1586,8 @@ def mod_news(state):
     injury_news = [i for i in injury_news if (i.get('date') or TODAY) >= ilimit][:40]
     enrich_stories(stories, state)
     save('news.json', {'updatedAt': iso(NOW), 'stories': stories, 'headlines': shown[:60],
-                       'injuryNews': injury_news, 'briefing': briefing, 'gemini': gem})
+                       'injuryNews': injury_news, 'briefing': briefing, 'gemini': gem,
+                       'valueArticles': value_articles})
     state['gemini'] = gem
     return {'ok': True, 'count': len(stories), 'warning': gem['error'] if not gem['used'] else None}
 
@@ -1547,9 +1689,63 @@ def merge_injuries(current, found, state):
     return sorted(by.values(), key=lambda i: i.get('date') or '', reverse=True)
 
 
-def apply_ai_updates(result, stories, state, strict=False):
+VALUE_WORD = re.compile(r'marktwert|market value|transfermarkt', re.I)
+SEG_RE = re.compile(r',\s|;\s*|\s[–—|-]\s|\sund\s|\sand\s|\s&\s')
+# Zahlen in solchen Satzteilen sind keine Transfermarkt-Werte (Abloesen, Klauseln, Vereins-Schaetzungen ...)
+NOT_VALUE = re.compile(r'taxier|preisschild|abl[öo]se|klausel|angebot|biete|forder|verlang|gehalt|\bcies\b|kaufoption|'
+                       r'sch[äa]tz(?:t|ung|en)|\bfee\b|offer|\bbid\b|release', re.I)
+# Artikel, die sich wirklich auf die Transfermarkt-Bewertung beziehen (nicht nur "auf dem Transfermarkt")
+TM_SOURCE = re.compile(r'transfermarkt\.(?:de|com|at|ch)|marktwert-?update|neue[nrs]? marktwert|marktwerte (?:wurden )?aktualisiert|'
+                       r'portal[^.]{0,40}transfermarkt|laut transfermarkt|["„“]transfermarkt["“”]', re.I)
+
+
+def value_amounts(seg):
+    """Betraege, die als (neuer) Wert dastehen: "40 Mio.", "6,5 Millionen", "€65m", "von 28 auf 22", "800.000 Euro"."""
+    out = set()
+    mio = lambda s: int(round(float(s.replace(',', '.')) * 1e6))  # noqa: E731
+    for m in re.finditer(r'(\d{1,3}(?:[.,]\d{1,2})?)\s*-?\s*(?:Mio\b|Millionen|Million|mln\b|m\b)', seg, re.I):
+        out.add(mio(m.group(1)))
+    for m in re.finditer(r'\b(?:auf|bei)\s+(\d{1,3}(?:,\d{1,2})?)(?![\d.,]|\s*(?:Prozent|%|Tor|Spiel|Jahr|Punkt|Minute|Eins))',
+                         seg, re.I):
+        out.add(mio(m.group(1)))
+    for m in re.finditer(r'(\d{1,3}(?:\.\d{3})+)\s*(?:€|Euro)', seg):
+        out.add(int(m.group(1).replace('.', '')))
+    for m in re.finditer(r'(\d{1,3})\s*Tsd\b', seg, re.I):
+        out.add(int(m.group(1)) * 1000)
+    return out
+
+
+def value_proof(name, v, evidence, quote=None, others=()):
+    """Beleg fuer einen KI-Marktwert. Mit quote (Artikel): das Zitat muss woertlich im Artikel stehen.
+    Ohne quote (Schlagzeile): die Schlagzeile selbst ist der Beleg. In beiden Faellen muessen Spieler und
+    genau diese Zahl zusammen stehen - nennt der Text mehrere Spieler, im selben Satzteil."""
+    parts = slug(name).split('-')
+    need = parts[-1:] if len(parts[-1]) > 4 else parts  # kurze Nachnamen (z. B. Can) nur mit Vornamen
+    for h in evidence or []:
+        title = h.get('title') or ''
+        if quote:
+            if slug(quote) not in slug(h.get('text') or title):
+                continue
+            if not VALUE_WORD.search(' '.join((title, h.get('desc') or '', quote))):
+                continue
+            src = quote
+        elif VALUE_WORD.search(title):
+            src = title
+        else:
+            continue
+        words = slug(src).split('-')
+        alone = not any(o in words for o in others if o not in need)
+        for seg in ([src] if alone else SEG_RE.split(src)):
+            w = slug(seg).split('-')
+            if all(x in w for x in need) and v in value_amounts(seg) and not NOT_VALUE.search(seg):
+                return h
+    return None
+
+
+def apply_ai_updates(result, stories, state, strict=False, evidence=None):
     """Marktwerte und Vertragsverlaengerungen aus den KI-ausgewerteten News in die Kaderdaten uebernehmen.
-    strict=True (Werte aus der Google-Suche): nur plausible Spruenge (hoechstens +/-60 %) werden uebernommen."""
+    strict=True (Werte aus der Google-Suche): nur plausible Spruenge (hoechstens +/-60 %) werden uebernommen.
+    evidence (Schlagzeilen): jeder Marktwert braucht eine Schlagzeile, in der Spieler und Zahl stehen."""
     squads = load('squads.json')
     if not squads:
         return 0
@@ -1569,6 +1765,7 @@ def apply_ai_updates(result, stories, state, strict=False):
         hits = [v for k, vs in index.items() for v in vs if last and k.split('-')[-1] == last]
         return hits if len({p['id'] for _, p in hits}) == 1 else []
 
+    lasts = {k.split('-')[-1] for k in index if k}
     changed, touched = 0, set()
     for mv in result.get('marketValues') or []:
         v = mv.get('value')
@@ -1581,22 +1778,37 @@ def apply_ai_updates(result, stories, state, strict=False):
             continue
         if strict and (not old or abs(v - old) / old > 0.6):
             continue
+        when = str(mv.get('date') or TODAY)[:10]
+        via = mv.get('source')
+        if evidence is not None:
+            proof = value_proof(hits[0][1]['name'], v, evidence, quote=mv.get('quote'), others=lasts)
+            if not proof or (old and not old / 3 <= v <= old * 3):
+                state.setdefault('valuesRejected', []).append('%s %s' % (hits[0][1]['name'], fmt_money(v)))
+                continue
+            when = proof['date'][:10]
+            series = hist['players'].get(hits[0][1]['id']) or []
+            if (series and series[-1][0] >= when) or proof['date'] <= (squads.get('updatedAt') or ''):
+                continue  # unser Wert ist schon neuer als die Meldung (z. B. direkt von Transfermarkt geholt)
+            if proof.get('outlet') and slug(proof['outlet']) != slug(via or ''):
+                via = '%s via %s' % (via or 'Transfermarkt', proof['outlet'])
         for key, p in hits:
             if p.get('value') == v:
                 continue
             prev_v = p.get('value')
             p['prevValue'], p['value'] = prev_v, v
-            p['valueNote'] = 'laut %s (%s)' % (mv.get('source'), mv.get('date') or TODAY)
+            p['valueNote'] = 'laut %s (%s)' % (via, when)
             team = squads['teams'][key]
             if team.get('totalValue') is not None and prev_v is not None:
                 team['totalValue'] += v - prev_v
                 touched.add(key)
             series = hist['players'].setdefault(p['id'], [])
             if not series or series[-1][1] != v:
-                series.append([mv.get('date') or TODAY, v])
+                series.append([when, v])
+                series.sort(key=lambda x: x[0])
         changed += 1
+        state['valuesApplied'] = state.get('valuesApplied', 0) + 1
         state['changes'].add('values', '%s %s: %s → %s (laut %s)' % (
-            '▲' if v > (old or 0) else '▼', hits[0][1]['name'], fmt_money(old), fmt_money(v), mv.get('source')))
+            '▲' if v > (old or 0) else '▼', hits[0][1]['name'], fmt_money(old), fmt_money(v), via))
     for s in stories:
         if s.get('status') != 'extension' or not s.get('contractUntil'):
             continue

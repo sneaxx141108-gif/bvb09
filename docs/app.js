@@ -737,6 +737,26 @@
     }
     return out;
   }
+  // Transfermarkt-Seiten der drei Teams als "Ticket-Pässe"
+  const TM_PAGES = [
+    ['profis', 'Profis', 'Bundesliga', 'BVB', 'https://www.transfermarkt.de/borussia-dortmund/startseite/verein/16'],
+    ['u23', 'U23', 'BVB II', 'U23', 'https://www.transfermarkt.de/borussia-dortmund-ii/startseite/verein/17'],
+    ['u19', 'U19', 'A-Junioren', 'U19', 'https://www.transfermarkt.de/borussia-dortmund-u19/startseite/verein/1464'],
+  ];
+  function tmLinks() {
+    return `<section class="sec"><div class="sec-h"><h2>Transfermarkt</h2><span class="note">öffnet transfermarkt.de</span></div>
+      <div class="tmp-list stagger">${TM_PAGES.map(([k, name, sub, wm, url], i) => {
+    const t = team(k);
+    const league = k === 'u23' ? `${sub} · ${(D.u23 || {}).league || 'Regionalliga'}` : sub;
+    const facts = [t.totalValue ? money(t.totalValue, { short: 1 }) : '', t.count ? `${t.count} Spieler` : ''].filter(Boolean).join(' · ');
+    return `<a class="tmp${i === 0 ? ' gold' : ''}" href="${url}" target="_blank" rel="noopener" style="--d:${(i * 1.6).toFixed(1)}s" aria-label="${name} auf Transfermarkt öffnen">
+          <span class="tmp-wm" aria-hidden="true">${wm}</span>
+          <span class="tmp-stub" aria-hidden="true"><img src="${BVB.crest}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"></span>
+          <span class="tmp-txt"><b>${name}</b><span>${esc(league)}</span>${facts ? `<span class="tmp-v">${esc(facts)}</span>` : ''}</span>
+          <span class="tmp-go" aria-hidden="true">${I.ext}</span>
+        </a>`;
+  }).join('')}</div></section>`;
+  }
   function vWerte() {
     const k = UI.werteTeam;
     const t = team(k);
@@ -754,6 +774,7 @@
       <span class="row" style="gap:6px;margin-top:2px"><span class="chip ink">▲ ${up} gestiegen</span><span class="chip" style="background:rgba(10,9,0,.12);color:var(--ink)">▼ ${movers.length - up} gefallen</span></span>
       ${hist.length >= 2 ? chartHtml(hist, { h: 90, ink: true }) : ''}
     </section>`;
+    out += tmLinks();
     if (movers.length) {
       out += `<section class="sec"><div class="sec-h"><h2>Gewinner &amp; Verlierer</h2><span class="note">letzte Bewertung</span></div>
         <div class="movers">${movers.slice(0, 10).map((p) => { const d = p.value - p.prevValue; return `<a class="mover press" href="#/spieler/${k}/${p.id}">${img(pimg(p.img, 'medium'), 'avatar', p.name, initials(p.name))}<span class="delta ${d > 0 ? 'up' : 'down'}">${d > 0 ? '▲' : '▼'} ${money(Math.abs(d), { short: 1, noEur: 1 })}</span><span style="font-size:13px;font-weight:800;line-height:1.2">${esc(p.name)}</span><span class="faint" style="font-size:11px;font-weight:600">${money(p.prevValue, { short: 1 })} → ${money(p.value, { short: 1 })}</span></a>`; }).join('')}</div></section>`;
@@ -1009,7 +1030,7 @@
     return pageHead('Me<em>hr</em>', 'Alles rund um den BVB') + `<div class="tiles stagger">
       <a class="mtile y stripes" href="#/mehr/update"><span class="mi" style="position:relative">${I.ai}</span><b style="position:relative">KI-Update-Zentrale</b><span style="position:relative">${st.lastRun ? `Letztes Update ${esc(rel(st.lastRun))} · ${st.changes ? st.changes.total : 0} Änderungen` : 'Wann Gemini zuletzt aktualisiert hat'}</span></a>
       ${items.map(([h, ic, t, s]) => `<a class="mtile" href="${h}"><span class="mi">${ic}</span><b>${t}</b><span>${esc(s)}</span></a>`).join('')}
-    </div>`;
+    </div>` + tmLinks();
   }
   const CAT = { values: 'Werte', transfers: 'Transfers', stories: 'Storys', rumors: 'Gerüchte', news: 'News', injuries: 'Verletz.', matches: 'Spiele', table: 'Tabelle', stats: 'Statistik', squad: 'Kader' };
   const CAT_COLOR = { values: '#FDE100', transfers: '#3BD67F', stories: '#3BD67F', rumors: '#FFB020', news: '#5AA9FF', injuries: '#FF5A4E', matches: '#F6F5EE', table: '#F6F5EE', stats: '#A3A39A', squad: '#FDE100' };
@@ -1065,6 +1086,7 @@
         <div class="kv"><span>Transfer-Storys</span><span>${gem.stories || 0}</span></div>
         <div class="kv"><span>Verletzungs-News</span><span>${gem.injuries || 0}</span></div>
         <div class="kv"><span>Marktwerte &amp; Verträge übernommen</span><span>${gem.applied || 0}</span></div>
+        <div class="kv"><span>Marktwert-Artikel gelesen</span><span>${(gem.valueArticles || {}).read || 0}${gem.valuesApplied ? ` · ${gem.valuesApplied} Werte neu` : ''}</span></div>
         <div class="kv"><span>Marktwert-Check per Google-Suche</span><span>${gem.valuesChecked ? `${esc(rel(gem.valuesChecked.at))} · ${gem.valuesChecked.applied || 0} neu` : gem.noGroundingUntil ? 'pausiert (Gratis-Kontingent)' : 'noch nicht gelaufen'}</span></div>
         <div class="kv"><span>Modell</span><span>${esc(gem.model || '')}${gem.grounded ? ' · mit Suche' : ''}</span></div>`
         : `<p class="muted" style="font-size:12px;line-height:1.55;margin-top:6px">${gem.error ? `Gemini konnte zuletzt nicht antworten (${esc(gem.error)}). Spiele, Tabellen und Live-Tore laufen trotzdem weiter.` : 'Liest Meldungen von Romano, Sky, kicker &amp; Co. und macht daraus Here-we-go-Karten, Verletzungs-News, neue Marktwerte und das KI-Briefing.'}</p>`}
