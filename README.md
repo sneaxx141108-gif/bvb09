@@ -6,9 +6,9 @@ Web-App fürs iPhone (in Safari öffnen → Teilen → „Zum Home-Bildschirm“
 
 ## Was die App kann
 
-- **Transfers:** Here-we-go-Karten mit Spielerfoto, beiden Wappen, Ablöse, Boni und Vertrag; Gerüchte mit Wechselwahrscheinlichkeit und Gerüchte-Ampel; Marktwerte von Profis, BVB II und U19 mit Gewinnern und Verlierern; Transferbilanz; Vertragsübersicht
+- **Transfers:** Here-we-go-Karten mit Spielerfoto, beiden Wappen, Ablöse, Boni und Vertrag; Gerüchte mit Wechselwahrscheinlichkeit und Gerüchte-Ampel; Transferbilanz; Vertragsübersicht; Links zu den Transfermarkt-Seiten von Profis, U23 und U19
 - **Spiele:** kommende Spiele mit Countdown, Ergebnisse mit Torschützen, Tabellen (Bundesliga und Regionalliga West), Torschützenliste, Live-Ergebnisse während der Spiele
-- **Kader:** alle Spieler mit Foto, Marktwert, Vertrag, Verletzungen und Sperren; Spielerprofil mit Marktwert-Verlauf und Statistiken
+- **Kader:** alle Spieler mit Foto, Vertrag, Verletzungen und Sperren; Spielerprofil mit Statistiken
 - **Mehr:** KI-Update-Zentrale, Statistiken, Meine Elf, Lazarett, Talente-Radar, Erfolge
 
 ## So bleibt alles aktuell
@@ -18,10 +18,11 @@ Web-App fürs iPhone (in Safari öffnen → Teilen → „Zum Home-Bildschirm“
 | Was | Woher |
 |---|---|
 | Spiele, Ergebnisse, Torschützen, Tabelle Bundesliga | OpenLigaDB |
-| Transfer-Storys, Verletzungen, neue Marktwerte, Vertragsverlängerungen, KI-Briefing | Google News (u. a. Transfermarkt-, kicker-, Sky-News), ausgewertet von der kostenlosen **Gemini-KI** – nur vertrauenswürdige Quellen |
+| Statistiken der Profis (Spiele, Tore, Vorlagen, Karten, Minuten) | ESPN |
+| Transfer-Storys, Verletzungen, Vertragsverlängerungen, KI-Briefing | Google News (u. a. kicker-, Sky-, Transfermarkt-News), ausgewertet von der kostenlosen **Gemini-KI** – nur vertrauenswürdige Quellen |
 | Fotos und Wappen für neue Spieler/Vereine | TheSportsDB |
 
-**Transfermarkt** sperrt Server (also auch GitHub) mit einem Bot-Schutz. Kader, Verträge, Statistiken, Transferbilanz, Gerüchteküche und BVB II stammen deshalb vom letzten direkten Abruf (`python scripts/update.py` auf einem normalen PC) und werden laufend über die KI-News ergänzt.
+**Transfermarkt** sperrt Server (also auch GitHub) mit einem Bot-Schutz. Kader, Verträge, U23-/U19-Statistiken, Transferbilanz, Gerüchteküche und BVB II stammen deshalb vom letzten direkten Abruf (`python scripts/update.py` auf einem normalen PC) und werden laufend über die KI-News ergänzt.
 
 Dafür muss unter *Settings → Secrets and variables → Actions* ein Secret namens `GEMINI_API_KEY` eingetragen sein. Ohne Gemini läuft alles weiter, nur die KI-Karten und das KI-Briefing fehlen dann.
 

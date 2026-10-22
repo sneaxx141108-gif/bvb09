@@ -4,7 +4,7 @@
 'use strict';
 (() => {
   const REPO = 'sneaxx141108-gif/bvb09';
-  const FILES = ['status', 'status-pc', 'squads', 'stats', 'history', 'transfers', 'rumors', 'news', 'matches', 'tables', 'u23'];
+  const FILES = ['status', 'status-pc', 'squads', 'stats', 'transfers', 'rumors', 'news', 'matches', 'tables', 'u23'];
   const TZ = 'Europe/Berlin';
   const BVB = { name: 'Borussia Dortmund', crest: 'https://tmssl.akamaized.net/images/wappen/head/16.png' };
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -18,7 +18,7 @@
     get(k, d) { try { const v = localStorage.getItem('bvb09.' + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem('bvb09.' + k, JSON.stringify(v)); } catch (e) { /* privat */ } },
   };
-  const UI = Object.assign({ kaderTeam: 'profis', werteTeam: 'profis', spieleTeam: 'profis', vertTeam: 'profis',
+  const UI = Object.assign({ kaderTeam: 'profis', spieleTeam: 'profis', vertTeam: 'profis',
     statsTeam: 'profis', newsFilter: 'alle', kaderFilter: 'alle' }, store.get('ui', {}));
   UI.kaderSearch = '';
   const saveUI = () => { const c = Object.assign({}, UI); delete c.kaderSearch; store.set('ui', c); };
@@ -49,6 +49,7 @@
     phone: sv('<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/>'),
     share: sv('<path d="M12 3v12M8 7l4-4 4 4M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>'),
     github: sv('<path d="M9 19c-4 1.5-4-2-6-2.5M15 21v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1-.3-3.4 1.3a11.6 11.6 0 0 0-6 0C6.8 2.8 5.8 3.1 5.8 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4.4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21"/>'),
+    link: sv('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'),
   };
   const SIL = '<svg class="tc-sil" viewBox="0 0 120 140" aria-hidden="true"><circle cx="60" cy="46" r="27" fill="#0A0900"/><path d="M6 140c5-36 27-54 54-54s49 18 54 54z" fill="#0A0900"/></svg>';
   const SIL_SOFT = SIL.replace(/#0A0900/g, '#2B2B2B');
@@ -250,7 +251,7 @@
         position: info.position || (sp && sp.position) || (s.role && s.role !== 'Spieler' ? s.role : ''),
         from: dir === 'in' ? other : BVB, to: dir === 'out' ? other : BVB,
         fee: s.fee, feeValue: s.feeValue, bonus: s.bonus, contract: s.contractUntil, loan: s.loan,
-        value: info.value || (sp && sp.value), source: s.source, tier: s.tier, date: s.date || s.updatedAt,
+        source: s.source, tier: s.tier, date: s.date || s.updatedAt,
         probability: (STATUS[s.status] || {}).big ? null : (s.probability != null ? s.probability : null), ai: true,
         summary: s.summary, updates: s.updates || [], links: s.links || [], playerId: info.id || (sp && sp.id), team: sp && sp.team,
       });
@@ -271,7 +272,7 @@
           key, kind: 'official', status: t.loanEnd ? 'loanEnd' : 'official', dir, name: t.name, img: pimg(t.img, 'big'),
           age: t.age, position: t.position, flags: t.flags, from: dir === 'in' ? t.club : BVB, to: dir === 'in' ? BVB : t.club,
           fee: t.fee, feeValue: t.feeValue, loan: t.loan, contract: sp && sp.contract ? sp.contract.slice(0, 4) : null,
-          value: sp && sp.value, source: 'Transfermarkt', tier: 1, date: (sp && sp.newSigning && sp.newSigning.date) || null,
+          source: 'Transfermarkt', tier: 1, date: (sp && sp.newSigning && sp.newSigning.date) || null,
           playerId: t.id, team: sp && sp.team, number: sp && sp.number,
         });
       }
@@ -283,7 +284,7 @@
       seen.add(key);
       out.push({
         key, kind: 'rumor', status: 'rumor', dir: 'in', name: r.name, img: pimg(r.img, 'big'), age: r.age, position: r.position,
-        flags: r.flags, from: r.club, to: BVB, value: r.value, probability: r.probability, trend: r.trend,
+        flags: r.flags, from: r.club, to: BVB, probability: r.probability, trend: r.trend,
         source: 'TM-Gerüchteküche', tier: 2, date: r.lastSource, url: r.url, playerId: r.id,
       });
     }
@@ -322,11 +323,11 @@
   }
   function statsTriple(it) {
     if (it.kind === 'rumor') {
-      return `<div><span>Marktwert</span><b>${money(it.value, { short: 1 })}</b></div>
+      return `<div><span>Alter</span><b>${it.age ? esc(it.age) + ' J.' : '–'}</b></div>
         <div><span>Chance</span><b class="amber">${it.probability != null ? it.probability + ' %' : '–'}</b></div>
         <div><span>Quelle</span><b>${it.date ? F.dm.format(toDate(it.date)) : '–'}</b></div>`;
     }
-    const third = it.contract ? `<div><span>Vertrag</span><b>bis ${esc(String(it.contract).slice(0, 4))}</b></div>` : `<div><span>Marktwert</span><b>${money(it.value, { short: 1 })}</b></div>`;
+    const third = it.contract ? `<div><span>Vertrag</span><b>bis ${esc(String(it.contract).slice(0, 4))}</b></div>` : `<div><span>Stand</span><b>${it.date ? F.dm.format(toDate(it.date)) : '–'}</b></div>`;
     const second = it.probability != null && !it.bonus ? `<div><span>KI-Chance</span><b class="amber">${it.probability} %</b></div>` : `<div><span>Boni</span><b>${esc(it.bonus || 'k. A.')}</b></div>`;
     return `<div><span>${it.loan ? 'Leihgebühr' : 'Ablöse'}</span><b class="${STATUS[it.status] && STATUS[it.status].big ? 'yellow' : ''}">${esc(feeText(it))}</b></div>
       ${second}${third}`;
@@ -396,33 +397,6 @@
       if (cols.length !== v.length) { $('.odo-num', cell).innerHTML = odoDigits(v); return; }
       v.split('').forEach((ch, j) => { if (cols[j].dataset.d !== ch) { cols[j].dataset.d = ch; cols[j].style.transform = `translateY(-${(+ch) * 10}%)`; } });
     });
-  }
-  function chartHtml(series, opts = {}) {
-    const pts = (series || []).filter((p) => p && p[1] != null).map((p) => [Date.parse(p[0] + 'T12:00:00Z'), p[1]]);
-    if (pts.length < 2) return '';
-    const w = 340;
-    const h = opts.h || 120;
-    const x0 = pts[0][0];
-    const x1 = pts[pts.length - 1][0];
-    const vmax = Math.max(...pts.map((p) => p[1])) || 1;
-    const base = h - 20;
-    const X = (t) => 4 + ((t - x0) / ((x1 - x0) || 1)) * (w - 10);
-    const Y = (v) => base - (v / vmax) * (base - 14);
-    const xy = pts.map((p) => [+X(p[0]).toFixed(1), +Y(p[1]).toFixed(1), p[0], p[1]]);
-    const line = xy.map((p) => `${p[0]},${p[1]}`).join(' ');
-    const last = xy[xy.length - 1];
-    const gid = 'g' + Math.random().toString(36).slice(2, 7);
-    const ink = opts.ink ? '#0A0900' : '#FDE100';
-    return `<div class="chart" data-chart="${esc(JSON.stringify(xy))}" data-w="${w}" style="${opts.style || ''}">
-      <svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Verlauf von ${esc(money(pts[0][1]))} bis ${esc(money(last[3]))}">
-        <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${ink}" stop-opacity=".3"/><stop offset="1" stop-color="${ink}" stop-opacity="0"/></linearGradient></defs>
-        <line x1="0" y1="${base}" x2="${w}" y2="${base}" stroke="${opts.ink ? 'rgba(10,9,0,.15)' : 'rgba(255,255,255,.1)'}"/>
-        <polygon class="area" points="${line} ${X(x1).toFixed(1)},${base} ${X(x0).toFixed(1)},${base}" fill="url(#${gid})"/>
-        <polyline class="ln" points="${line}" fill="none" stroke="${ink}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>
-        <circle class="ping" cx="${last[0]}" cy="${last[1]}" r="4.5" fill="${ink}"/><circle cx="${last[0]}" cy="${last[1]}" r="4.5" fill="${ink}"/>
-        ${opts.noLabels ? '' : `<text x="0" y="${h - 4}" font-size="10" fill="${opts.ink ? 'rgba(10,9,0,.6)' : '#85847C'}" font-family="Inter Tight, sans-serif" font-weight="700">${new Date(x0).getFullYear()}</text>
-        <text x="${w}" y="${h - 4}" font-size="10" fill="${opts.ink ? 'rgba(10,9,0,.6)' : '#85847C'}" font-family="Inter Tight, sans-serif" font-weight="700" text-anchor="end">${new Date(x1).getFullYear()}</text>`}
-      </svg><span class="chart-cursor"></span><span class="chart-tip"></span></div>`;
   }
   function liveDotClass() {
     const st = D.status || {};
@@ -502,13 +476,10 @@
     const pro = team('profis');
     const feed = transferFeed().slice(0, 12);
     const missing = allPlayers().filter((p) => p.team === 'profis' && isOut(p));
-    const up = pro.players.filter((p) => p.prevValue && p.value > p.prevValue).length;
-    const down = pro.players.filter((p) => p.prevValue && p.value < p.prevValue).length;
     const win = windowInfo();
     const hist = historyItem();
     const bdays = birthdays();
     const heads = ((D.news || {}).headlines || []).slice(0, 4);
-    const tot = (((D.history || {}).totals || {}).profis) || [];
     let out = `<header class="hello">
       <div><div class="eyebrow">${esc(F.long.format(new Date()))}</div><h1>${esc(greeting())},<br><em>Borusse!</em></h1></div>
       <a class="live-pill press" href="#/mehr/update" aria-label="Update-Zentrale öffnen"><span class="dot ${liveDotClass()}"></span><span data-rel="${esc(st.lastRun || '')}">${st.lastRun ? esc(rel(st.lastRun)) : 'Update'}</span></a>
@@ -542,9 +513,9 @@
       tiles.push(`<a class="tile" href="#/spiele/profis/ergebnisse"><span class="eyebrow">Form</span>${formHtml(fm)}
         ${lm ? `<span style="margin-top:auto"><span class="faint" style="font-size:10px;font-weight:800;letter-spacing:.1em">LETZTES SPIEL · ${esc(compShort(lm.comp).toUpperCase())}</span><span class="big" style="display:block;margin-top:4px;font-size:24px">${esc(tname(lm.home))} <span class="yellow">${lm.score[0]}:${lm.score[1]}</span> ${esc(tname(lm.away))}</span><span class="sub" style="display:block;margin-top:4px">${esc(scorers(lm) || F.dm.format(new Date(lm.date)))}</span></span>` : ''}</a>`);
     }
-    tiles.push(`<a class="tile" href="#/transfers/werte"><span class="eyebrow">Kaderwert</span>${countEl(pro.totalValue || 0, 'moneyS', 'big', 'font-size:30px')}
-      ${tot.length >= 2 ? chartHtml(tot, { h: 64, noLabels: true, style: 'margin-top:auto;pointer-events:none' }) : ''}
-      <span class="sub" style="${tot.length >= 2 ? '' : 'margin-top:auto'}"><span class="green">▲ ${up}</span> · <span class="red">▼ ${down}</span> zuletzt</span></a>`);
+    tiles.push(`<a class="tile tm-tile" href="#/transfers/tm"><span class="eyebrow">Transfermarkt</span>
+      <span class="tm-tags" aria-hidden="true"><b>Profis</b><b>U23</b><b>U19</b></span>
+      <span class="sub" style="margin-top:auto">Direkt zu transfermarkt.de</span></a>`);
     tiles.push(`<a class="tile" href="#/mehr/lazarett"><span class="eyebrow">Lazarett</span>
       <span class="big ${missing.length ? '' : 'green'}">${missing.length ? missing.length + ' fehlen' : 'Alle fit'}</span>
       <span class="stack-av" style="margin-top:auto">${missing.slice(0, 5).map((p) => img(pimg(p.img, 'medium'), 'avatar sm', p.name, initials(p.name))).join('')}</span>
@@ -710,8 +681,9 @@
     const tr = D.transfers || {};
     const eyebrow = `Saison ${esc(tr.seasonLabel || '')}${win ? ` · Fenster ${win.open ? `offen, noch ${win.days} T.` : `in ${win.days} T.`}` : ''}`;
     let out = pageHead('Trans<em>fers</em>', eyebrow);
-    out += seg('transfers', [['news', 'News', '#/transfers/news'], ['werte', 'Werte', '#/transfers/werte'], ['bilanz', 'Bilanz', '#/transfers/bilanz'], ['vertraege', 'Verträge', '#/transfers/vertraege']], sub);
-    if (sub === 'werte') out += vWerte();
+    if (sub === 'werte') sub = 'tm';
+    out += seg('transfers', [['news', 'News', '#/transfers/news'], ['tm', 'TM', '#/transfers/tm'], ['bilanz', 'Bilanz', '#/transfers/bilanz'], ['vertraege', 'Verträge', '#/transfers/vertraege']], sub);
+    if (sub === 'tm') out += vTM();
     else if (sub === 'bilanz') out += vBilanz();
     else if (sub === 'vertraege') out += vVertraege();
     else out += vNews();
@@ -737,54 +709,40 @@
     }
     return out;
   }
-  // Transfermarkt-Seiten der drei Teams als "Ticket-Pässe"
+  // Transfermarkt: nur die drei Team-Seiten als Ticket-Pässe in einer Flutlicht-Szene
   const TM_PAGES = [
     ['profis', 'Profis', 'Bundesliga', 'BVB', 'https://www.transfermarkt.de/borussia-dortmund/startseite/verein/16'],
-    ['u23', 'U23', 'BVB II', 'U23', 'https://www.transfermarkt.de/borussia-dortmund-ii/startseite/verein/17'],
+    ['u23', 'U23', 'Regionalliga West', 'U23', 'https://www.transfermarkt.de/borussia-dortmund-ii/startseite/verein/17'],
     ['u19', 'U19', 'A-Junioren', 'U19', 'https://www.transfermarkt.de/borussia-dortmund-u19/startseite/verein/1464'],
   ];
-  function tmLinks() {
-    return `<section class="sec"><div class="sec-h"><h2>Transfermarkt</h2><span class="note">öffnet transfermarkt.de</span></div>
-      <div class="tmp-list stagger">${TM_PAGES.map(([k, name, sub, wm, url], i) => {
-    const t = team(k);
-    const league = k === 'u23' ? `${sub} · ${(D.u23 || {}).league || 'Regionalliga'}` : sub;
-    const facts = [t.totalValue ? money(t.totalValue, { short: 1 }) : '', t.count ? `${t.count} Spieler` : ''].filter(Boolean).join(' · ');
-    return `<a class="tmp${i === 0 ? ' gold' : ''}" href="${url}" target="_blank" rel="noopener" style="--d:${(i * 1.6).toFixed(1)}s" aria-label="${name} auf Transfermarkt öffnen">
-          <span class="tmp-wm" aria-hidden="true">${wm}</span>
-          <span class="tmp-stub" aria-hidden="true"><img src="${BVB.crest}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"></span>
-          <span class="tmp-txt"><b>${name}</b><span>${esc(league)}</span>${facts ? `<span class="tmp-v">${esc(facts)}</span>` : ''}</span>
-          <span class="tmp-go" aria-hidden="true">${I.ext}</span>
-        </a>`;
-  }).join('')}</div></section>`;
-  }
-  function vWerte() {
-    const k = UI.werteTeam;
-    const t = team(k);
-    const ps = [...(t.players || [])].sort((a, b) => (b.value || 0) - (a.value || 0));
-    const movers = ps.filter((p) => p.prevValue && p.value !== p.prevValue).sort((a, b) => Math.abs(b.value - b.prevValue) - Math.abs(a.value - a.prevValue));
-    const up = movers.filter((p) => p.value > p.prevValue).length;
-    const max = (ps[0] && ps[0].value) || 1;
-    const hist = (((D.history || {}).totals || {})[k]) || [];
-    const avgVal = t.count ? (t.totalValue || 0) / t.count : 0;
-    let out = `<div style="margin-top:14px">${teamSwitch('werteTeam', [['profis', 'Profis', money(team('profis').totalValue, { short: 1 })], ['u23', 'BVB II', money(team('u23').totalValue, { short: 1 })], ['u19', 'U19', money(team('u19').totalValue, { short: 1 })]])}</div>`;
-    out += `<section class="card-y stripes value-hero" style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
-      <span class="eyebrow">Gesamtmarktwert · ${esc(TEAMNAME[k])}</span>
-      ${countEl(t.totalValue || 0, 'money', 'giant')}
-      <span style="font-size:12px;font-weight:700">${t.count || 0} Spieler · Ø ${t.avgAge ? String(t.avgAge).replace('.', ',') : '–'} Jahre · Ø ${money(avgVal, { short: 1 })}</span>
-      <span class="row" style="gap:6px;margin-top:2px"><span class="chip ink">▲ ${up} gestiegen</span><span class="chip" style="background:rgba(10,9,0,.12);color:var(--ink)">▼ ${movers.length - up} gefallen</span></span>
-      ${hist.length >= 2 ? chartHtml(hist, { h: 90, ink: true }) : ''}
+  function vTM() {
+    const marq = '<span>BORUSSIA DORTMUND · SÜDTRIBÜNE · BVB 09 · </span>';
+    const tickets = TM_PAGES.map(([k, name, sub, wm, url], i) => {
+      const t = team(k);
+      const league = k === 'u23' ? ((D.u23 || {}).league || sub) : sub;
+      return `<a class="tmp${i === 0 ? ' gold' : ''}" href="${url}" target="_blank" rel="noopener" style="--d:${(i * 1.6).toFixed(1)}s" aria-label="${name} auf Transfermarkt öffnen">
+        <span class="tmp-wm" aria-hidden="true">${wm}</span>
+        <span class="tmp-stub" aria-hidden="true"><img src="${BVB.crest}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"></span>
+        <span class="tmp-txt"><b>${name}</b><span>${esc(league)}</span>${t.count ? `<span class="tmp-v">${t.count} Spieler</span>` : ''}</span>
+        <span class="tmp-go" aria-hidden="true">${I.ext}</span>
+      </a>`;
+    }).join('');
+    return `<section class="tmx" aria-label="Transfermarkt-Seiten">
+      <div class="tmx-bg" aria-hidden="true">
+        <span class="tmx-sky"></span><span class="tmx-beam l"></span><span class="tmx-beam r"></span>
+        <span class="tmx-mast l">${'<i></i>'.repeat(8)}</span><span class="tmx-mast r">${'<i></i>'.repeat(8)}</span>
+        <span class="tmx-marq">${marq}${marq}</span>
+        <span class="tmx-wall"></span>
+        <span class="tmx-sparks">${'<i></i>'.repeat(9)}</span>
+      </div>
+      <header class="tmx-head">
+        <span class="tmx-badge"><img src="${BVB.crest}" alt="" decoding="async" referrerpolicy="no-referrer"></span>
+        <h2>Transfer<em>markt</em></h2>
+        <p>Profis, U23 und U19 – ein Tipp und du bist direkt auf der Seite.</p>
+      </header>
+      <div class="tmp-list stagger">${tickets}</div>
+      <p class="tmx-foot">Öffnet transfermarkt.de</p>
     </section>`;
-    out += tmLinks();
-    if (movers.length) {
-      out += `<section class="sec"><div class="sec-h"><h2>Gewinner &amp; Verlierer</h2><span class="note">letzte Bewertung</span></div>
-        <div class="movers">${movers.slice(0, 10).map((p) => { const d = p.value - p.prevValue; return `<a class="mover press" href="#/spieler/${k}/${p.id}">${img(pimg(p.img, 'medium'), 'avatar', p.name, initials(p.name))}<span class="delta ${d > 0 ? 'up' : 'down'}">${d > 0 ? '▲' : '▼'} ${money(Math.abs(d), { short: 1, noEur: 1 })}</span><span style="font-size:13px;font-weight:800;line-height:1.2">${esc(p.name)}</span><span class="faint" style="font-size:11px;font-weight:600">${money(p.prevValue, { short: 1 })} → ${money(p.value, { short: 1 })}</span></a>`; }).join('')}</div></section>`;
-    }
-    out += `<section class="sec"><div class="sec-h"><h2>Alle Spieler</h2><span class="note">nach Marktwert</span></div><div class="card flat"><div class="list">
-      ${ps.map((p, i) => `<a class="li" href="#/spieler/${k}/${p.id}"><span class="rank">${i + 1}</span>${img(pimg(p.img, 'medium'), 'avatar sm', p.name, initials(p.name))}
-        <span class="grow" style="display:flex;flex-direction:column;gap:6px"><span class="row" style="justify-content:space-between;gap:8px"><span class="t ellipsis">${esc(p.name)}</span><span class="v">${money(p.value, { short: 1 })}</span></span>
-        <span class="bar"><span style="width:${Math.max(2, ((p.value || 0) / max) * 100).toFixed(1)}%;animation-delay:${Math.min(i, 14) * 0.04}s"></span></span></span></a>`).join('')}
-    </div></div></section>`;
-    return out;
   }
   function vBilanz() {
     const tr0 = D.transfers || {};
@@ -831,18 +789,19 @@
     for (const p of ps) (groups[p.contract.slice(0, 4)] = groups[p.contract.slice(0, 4)] || []).push(p);
     const years = Object.keys(groups).sort();
     const first = years[0];
-    const firstVal = first ? groups[first].reduce((s, p) => s + (p.value || 0), 0) : 0;
+    const monthsLeft = (c) => Math.max(0, Math.round((Date.parse(c + 'T00:00:00Z') - Date.now()) / (30.44 * 864e5)));
+    const leftTxt = (c) => { const m = monthsLeft(c); return m >= 12 ? `${Math.floor(m / 12)} J.${m % 12 ? ` ${m % 12} M.` : ''}` : `${m} Mon.`; };
     let out = `<div style="margin-top:14px">${teamSwitch('vertTeam', [['profis', 'Profis', ''], ['u23', 'BVB II', '']])}</div>`;
     if (first) {
       out += `<section class="card-y stripes" style="margin-top:12px"><span class="eyebrow">Verträge enden ${first}</span>
-        <div class="row" style="align-items:flex-end;gap:12px;margin-top:6px"><span class="num" style="font-size:66px;line-height:.8">${groups[first].length}</span><span style="font-size:13px;font-weight:700;padding-bottom:6px">Spieler · zusammen ${money(firstVal, { short: 1 })} Marktwert</span></div>
+        <div class="row" style="align-items:flex-end;gap:12px;margin-top:6px"><span class="num" style="font-size:66px;line-height:.8">${groups[first].length}</span><span style="font-size:13px;font-weight:700;padding-bottom:6px">Spieler · noch ${esc(leftTxt(groups[first][0].contract))}</span></div>
         <div class="stack-av" style="margin-top:12px">${groups[first].slice(0, 8).map((p) => img(pimg(p.img, 'medium'), 'avatar sm', p.name, initials(p.name), 'style="box-shadow:0 0 0 3px var(--y)"')).join('')}</div></section>`;
     }
     for (const y of years) {
       const soon = y === first;
       out += `<section class="sec"><div class="sec-h"><h2>${y}</h2>${soon ? '<span class="chip loss sm">läuft aus</span>' : `<span class="note">${groups[y].length} Spieler</span>`}</div>
         <div class="card flat"><div class="list">${groups[y].map((p) => `<a class="li" href="#/spieler/${k}/${p.id}">${img(pimg(p.img, 'medium'), 'avatar sm', p.name, initials(p.name))}
-          <span class="grow"><div class="t ellipsis">${esc(p.name)}</div><div class="s">${esc(p.position || '')} · ${p.age || '–'} J. · ${fmtDate(p.contract)}${p.contractNote ? ' · <span class="green">' + esc(p.contractNote) + '</span>' : ''}</div></span><span class="v">${money(p.value, { short: 1 })}</span></a>`).join('')}</div></div></section>`;
+          <span class="grow"><div class="t ellipsis">${esc(p.name)}</div><div class="s">${esc(p.position || '')} · ${p.age || '–'} J. · ${fmtDate(p.contract)}${p.contractNote ? ' · <span class="green">' + esc(p.contractNote) + '</span>' : ''}</div></span><span class="v ${soon ? 'red' : ''}">${esc(leftTxt(p.contract))}</span></a>`).join('')}</div></div></section>`;
     }
     if (!years.length) out += '<div class="empty" style="margin-top:14px">Keine Vertragsdaten.</div>';
     return out;
@@ -920,7 +879,7 @@
   function vKader(k) {
     UI.kaderTeam = k;
     const t = team(k);
-    let out = pageHead('Ka<em>der</em>', `${t.count || 0} Spieler · Ø ${t.avgAge ? String(t.avgAge).replace('.', ',') : '–'} Jahre · ${money(t.totalValue, { short: 1 })}`);
+    let out = pageHead('Ka<em>der</em>', `${t.count || 0} Spieler · Ø ${t.avgAge ? String(t.avgAge).replace('.', ',') : '–'} Jahre`);
     out += seg('kader', [['profis', 'Profis', '#/kader/profis'], ['u23', 'BVB II', '#/kader/u23'], ['u19', 'U19', '#/kader/u19']], k);
     out += `<div style="margin-top:12px"><label class="sr" for="ksearch">Spieler suchen</label><input id="ksearch" class="search" type="search" placeholder="Spieler suchen …" autocomplete="off" value="${esc(UI.kaderSearch)}" data-action="search"></div>`;
     out += `<div class="chips" style="margin-top:12px" role="group" aria-label="Filter">${[['alle', 'Alle'], ...GROUPS, ['fehlt', 'Fehlt']].map(([kk, l]) => `<button type="button" class="${UI.kaderFilter === kk ? 'on' : ''}" aria-pressed="${UI.kaderFilter === kk}" data-action="kfilter" data-val="${kk}">${l}</button>`).join('')}</div>`;
@@ -943,10 +902,11 @@
   }
   function pCard(p, k) {
     const ab = absencesOf(p).filter((a) => a.type !== 'ineligible');
-    const trend = p.prevValue && p.value !== p.prevValue ? `<small class="${p.value > p.prevValue ? 'green' : 'red'}">${p.value > p.prevValue ? '▲' : '▼'}</small>` : '';
+    const s = statsOf(k, p.id) || {};
+    const line = `${s.apps || 0} Sp.${s.goals ? ` · ${s.goals} ${s.goals === 1 ? 'Tor' : 'Tore'}` : ''}`;
     return `<a class="pc ${ab.length ? 'out' : ''}" href="#/spieler/${k}/${p.id}" data-vt="player">
       <span class="pc-media">${p.number ? `<span class="pc-num" aria-hidden="true">${esc(p.number)}</span>` : ''}${img(pimg(p.img, 'big'), '', p.name, initials(p.name))}${ab.length ? `<span class="pc-abs chip sm ${ab[0].type === 'injury' ? 'loss' : 'warn'}">${ab[0].type === 'injury' ? 'Verletzt' : 'Fehlt'}</span>` : ''}</span>
-      <span class="pc-body"><span class="pc-name">${esc(p.name)}${p.captain ? ' <span class="yellow">©</span>' : ''}</span><span class="pc-pos">${esc(p.position || '')}${p.age ? ' · ' + p.age + ' J.' : ''}</span><span class="pc-val">${money(p.value, { short: 1 })}${trend}</span></span>
+      <span class="pc-body"><span class="pc-name">${esc(p.name)}${p.captain ? ' <span class="yellow">©</span>' : ''}</span><span class="pc-pos">${esc(p.position || '')}${p.age ? ' · ' + p.age + ' J.' : ''}</span><span class="pc-val">${esc(line)}</span></span>
     </a>`;
   }
   const INJ = { injured: 'Fällt aus:', doubtful: 'Fraglich:', back: 'Zurück im Training:', fit: 'Wieder fit:' };
@@ -954,8 +914,6 @@
     const p = findPlayer(k, id);
     if (!p) return pageHead('Spieler', '', '', '#/kader/' + k) + '<div class="empty">Spieler nicht gefunden.</div>';
     const st = statsOf(k, id) || {};
-    const hist = ((D.history || {}).players || {})[id] || [];
-    const d = p.prevValue ? p.value - p.prevValue : 0;
     const abs = absencesOf(p);
     const injNews = ((D.news || {}).injuryNews || []).filter((n) => slug(n.player) === slug(p.name));
     const stories = transferFeed().filter((it) => it.playerId === id || slug(it.name) === slug(p.name));
@@ -979,15 +937,7 @@
       <div class="phero-n">${p.number ? `<b>#${esc(p.number)}</b>` : ''}<span class="chip ink">${esc(p.group || '')}</span>${p.captain ? '<span class="chip ink">Kapitän</span>' : ''}</div>
       <div class="phero-name"><h1>${esc(p.name)}</h1><span>${esc([p.position, p.age ? p.age + ' Jahre' : '', (p.flags || []).map((f) => f.name).join(' / ')].filter(Boolean).join(' · '))}</span></div>
     </section>`;
-    out += `<section class="card" style="margin-top:6px;display:flex;flex-direction:column;gap:6px">
-      <div class="row" style="justify-content:space-between;align-items:flex-end">
-        <span><span class="eyebrow">Marktwert</span><div class="num yellow" style="font-size:40px;line-height:1">${countEl(p.value || 0, 'money')}</div></span>
-        ${d ? `<span class="chip ${d > 0 ? 'ok' : 'loss'}">${d > 0 ? '▲' : '▼'} ${money(Math.abs(d), { short: 1 })}</span>` : ''}
-      </div>
-      ${p.valueNote ? `<span class="row faint" style="font-size:11px;gap:6px;font-weight:600"><span class="ai-badge sm">${I.ai}</span>Neuer Wert ${esc(p.valueNote)}</span>` : ''}
-      ${hist.length >= 2 ? chartHtml(hist) + '<span class="faint" style="font-size:11px;font-weight:600">Tippen &amp; ziehen für einzelne Werte</span>' : '<span class="faint" style="font-size:12px">Noch kein Marktwert-Verlauf vorhanden.</span>'}
-    </section>`;
-    out += `<section class="grid4" style="margin-top:12px">
+    out += `<section class="grid4" style="margin-top:6px">
       <div class="stat-box"><b>${st.apps || 0}</b><span>Spiele</span></div>
       <div class="stat-box"><b class="yellow">${st.goals || 0}</b><span>Tore</span></div>
       <div class="stat-box"><b>${st.assists || 0}</b><span>Vorlagen</span></div>
@@ -1023,6 +973,7 @@
       ['#/mehr/elf', I.shirt, 'Meine Elf', 'Deine Traum-Aufstellung'],
       ['#/mehr/lazarett', I.cross, 'Lazarett', 'Verletzte & Rückkehrer'],
       ['#/mehr/talente', I.sprout, 'Talente', 'U19 & BVB II'],
+      ['#/transfers/tm', I.link, 'Transfermarkt', 'Profis, U23 & U19'],
       ['#/mehr/erfolge', I.trophy, 'Erfolge', 'Titel & große Momente'],
       ['#/mehr/install', I.phone, 'Installieren', 'Aufs iPhone holen'],
       ['#/mehr/info', I.infoC, 'Über die App', 'Quellen & Hinweise'],
@@ -1030,7 +981,7 @@
     return pageHead('Me<em>hr</em>', 'Alles rund um den BVB') + `<div class="tiles stagger">
       <a class="mtile y stripes" href="#/mehr/update"><span class="mi" style="position:relative">${I.ai}</span><b style="position:relative">KI-Update-Zentrale</b><span style="position:relative">${st.lastRun ? `Letztes Update ${esc(rel(st.lastRun))} · ${st.changes ? st.changes.total : 0} Änderungen` : 'Wann Gemini zuletzt aktualisiert hat'}</span></a>
       ${items.map(([h, ic, t, s]) => `<a class="mtile" href="${h}"><span class="mi">${ic}</span><b>${t}</b><span>${esc(s)}</span></a>`).join('')}
-    </div>` + tmLinks();
+    </div>`;
   }
   const CAT = { values: 'Werte', transfers: 'Transfers', stories: 'Storys', rumors: 'Gerüchte', news: 'News', injuries: 'Verletz.', matches: 'Spiele', table: 'Tabelle', stats: 'Statistik', squad: 'Kader' };
   const CAT_COLOR = { values: '#FDE100', transfers: '#3BD67F', stories: '#3BD67F', rumors: '#FFB020', news: '#5AA9FF', injuries: '#FF5A4E', matches: '#F6F5EE', table: '#F6F5EE', stats: '#A3A39A', squad: '#FDE100' };
@@ -1085,11 +1036,9 @@
         <div class="kv"><span>Geprüfte Meldungen</span><span>${gem.headlinesAnalyzed || gem.headlines || 0}</span></div>
         <div class="kv"><span>Transfer-Storys</span><span>${gem.stories || 0}</span></div>
         <div class="kv"><span>Verletzungs-News</span><span>${gem.injuries || 0}</span></div>
-        <div class="kv"><span>Marktwerte &amp; Verträge übernommen</span><span>${gem.applied || 0}</span></div>
-        <div class="kv"><span>Marktwert-Artikel gelesen</span><span>${(gem.valueArticles || {}).read || 0}${gem.valuesApplied ? ` · ${gem.valuesApplied} Werte neu` : ''}</span></div>
-        <div class="kv"><span>Marktwert-Check per Google-Suche</span><span>${gem.valuesChecked ? `${esc(rel(gem.valuesChecked.at))} · ${gem.valuesChecked.applied || 0} neu` : gem.noGroundingUntil ? 'pausiert (Gratis-Kontingent)' : 'noch nicht gelaufen'}</span></div>
+        <div class="kv"><span>Verträge &amp; Kader übernommen</span><span>${gem.applied || 0}</span></div>
         <div class="kv"><span>Modell</span><span>${esc(gem.model || '')}${gem.grounded ? ' · mit Suche' : ''}</span></div>`
-        : `<p class="muted" style="font-size:12px;line-height:1.55;margin-top:6px">${gem.error ? `Gemini konnte zuletzt nicht antworten (${esc(gem.error)}). Spiele, Tabellen und Live-Tore laufen trotzdem weiter.` : 'Liest Meldungen von Romano, Sky, kicker &amp; Co. und macht daraus Here-we-go-Karten, Verletzungs-News, neue Marktwerte und das KI-Briefing.'}</p>`}
+        : `<p class="muted" style="font-size:12px;line-height:1.55;margin-top:6px">${gem.error ? `Gemini konnte zuletzt nicht antworten (${esc(gem.error)}). Spiele, Tabellen und Live-Tore laufen trotzdem weiter.` : 'Liest Meldungen von Romano, Sky, kicker &amp; Co. und macht daraus Here-we-go-Karten, Verletzungs-News, Vertragsverlängerungen und das KI-Briefing.'}</p>`}
     </section>`;
     const modRow = (m) => `<div class="mod">${m.ok === false ? I.bad : m.warning ? I.warn : I.ok}<span class="grow"><b>${esc(m.label)}</b>${m.ok === false ? `<div class="red" style="font-size:12px">${esc(m.error || 'Fehler')}</div>` : m.warning ? `<div class="amber" style="font-size:12px">${esc(m.warning)}</div>` : ''}<div class="faint" style="font-size:11px;font-weight:600">${m.at ? 'aktualisiert ' + esc(rel(m.at)) : 'noch nie'}${m.seconds != null ? ' · ' + m.seconds + ' s' : ''}</div></span></div>`;
     out += `<section class="sec"><div class="sec-h"><h2>Automatisch</h2><span class="note">GitHub · 3× täglich</span></div><div class="card flat">${mods.map(modRow).join('')}</div></section>`;
@@ -1097,7 +1046,7 @@
     const pcMods = Object.values(pc.modules || {});
     const aiAt = (D.squads || {}).aiUpdatedAt || (st.transfermarkt || {}).aiUpdatedAt;
     out += `<section class="sec"><div class="sec-h"><h2>Transfermarkt</h2><span class="note">Stand ${esc(pc.lastRun ? fmtDate(pc.lastRun) : '–')}</span></div>
-      <div class="note-box" style="margin-bottom:10px">${I.info}<span>Transfermarkt sperrt Server wie GitHub mit einem Bot-Schutz. Neue Marktwerte, Vertragsverlängerungen und Verletzungen übernimmt deshalb <b>Gemini</b> aus den News.${aiAt ? ` Letzte KI-Änderung am Kader: ${esc(rel(aiAt))}.` : ''} Tore zählt die App live aus den Spielberichten.</span></div>
+      <div class="note-box" style="margin-bottom:10px">${I.info}<span>Transfermarkt sperrt Server wie GitHub mit einem Bot-Schutz. Vertragsverlängerungen, Wechsel und Verletzungen übernimmt deshalb <b>Gemini</b> aus den News, die Statistiken kommen von ESPN.${aiAt ? ` Letzte KI-Änderung am Kader: ${esc(rel(aiAt))}.` : ''} Tore zählt die App live aus den Spielberichten.</span></div>
       ${pcMods.length ? `<div class="card flat">${pcMods.map(modRow).join('')}</div>` : ''}</section>`;
     const runs = (st.runs || []).slice(0, 30).reverse();
     if (runs.length) {
@@ -1147,7 +1096,7 @@
     const slots = FORMATIONS[e.f] || FORMATIONS['4-3-3'];
     const pros = team('profis').players || [];
     const chosen = Object.values(e.s).map((id) => pros.find((p) => p.id === id)).filter(Boolean);
-    const val = chosen.reduce((s, p) => s + (p.value || 0), 0);
+    const goals = chosen.reduce((s, p) => s + ((statsOf('profis', p.id) || {}).goals || 0), 0);
     const age = chosen.length ? (chosen.reduce((s, p) => s + (p.age || 0), 0) / chosen.length).toFixed(1).replace('.', ',') : '–';
     let out = pageHead('Meine <em>Elf</em>', 'Tippe auf eine Position', '', '#/mehr');
     out += `<div class="chips" role="group" aria-label="Formation">${Object.keys(FORMATIONS).map((f) => `<button type="button" class="${f === e.f ? 'on' : ''}" aria-pressed="${f === e.f}" data-action="formation" data-val="${f}">${f}</button>`).join('')}</div>`;
@@ -1158,7 +1107,7 @@
       ${slots.map(([pos, x, y], i) => { const p = pros.find((pp) => pp.id === e.s[i]); return `<button type="button" class="slot ${p ? 'filled' : ''}" style="left:${x}%;top:${y}%" data-action="slot" data-i="${i}" aria-label="${p ? esc(p.name) + ' als ' : 'Position '}${pos}">
         <span class="sl-c">${p ? img(pimg(p.img, 'medium'), '', p.name, initials(p.name)) : I.plus}</span><span class="sl-n">${p ? esc(lastName(p.name)) : pos}</span></button>`; }).join('')}
     </div>`;
-    out += `<div class="grid3" style="margin-top:12px"><div class="stat-box"><b>${chosen.length}/11</b><span>Spieler</span></div><div class="stat-box"><b class="yellow" style="font-size:22px">${money(val, { short: 1 })}</b><span>Marktwert</span></div><div class="stat-box"><b>${age}</b><span>Ø Alter</span></div></div>`;
+    out += `<div class="grid3" style="margin-top:12px"><div class="stat-box"><b>${chosen.length}/11</b><span>Spieler</span></div><div class="stat-box"><b class="yellow">${goals}</b><span>Saisontore</span></div><div class="stat-box"><b>${age}</b><span>Ø Alter</span></div></div>`;
     out += '<button type="button" class="btn ghost" style="margin-top:12px" data-action="elf-reset">Aufstellung leeren</button>';
     return out;
   }
@@ -1167,11 +1116,12 @@
     const slots = FORMATIONS[e.f] || FORMATIONS['4-3-3'];
     const [pos, , , grp] = slots[i];
     const taken = new Set(Object.entries(e.s).filter(([k]) => +k !== i).map(([, v]) => v));
-    const pros = [...(team('profis').players || [])].sort((a, b) => ((b.group === grp) - (a.group === grp)) || ((b.value || 0) - (a.value || 0)));
+    const apps = (p) => (statsOf('profis', p.id) || {}).apps || 0;
+    const pros = [...(team('profis').players || [])].sort((a, b) => ((b.group === grp) - (a.group === grp)) || (apps(b) - apps(a)));
     openSheet(`<h2 class="display" style="font-size:30px;text-transform:uppercase;margin-bottom:2px">${pos} wählen</h2><p class="muted" style="font-size:12px;margin-bottom:10px;font-weight:600">Passende Spieler zuerst</p>
       <div class="list">${e.s[i] ? `<button type="button" class="li" data-action="pick" data-i="${i}" data-id=""><span class="fb avatar sm">×</span><span class="grow t">Position leeren</span></button>` : ''}
       ${pros.map((p) => `<button type="button" class="li" data-action="pick" data-i="${i}" data-id="${p.id}" ${taken.has(p.id) ? 'disabled style="opacity:.35"' : ''}>
-        ${img(pimg(p.img, 'medium'), 'avatar sm', p.name, initials(p.name))}<span class="grow"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.position || '')}${p.group === grp ? ' · <span class="yellow">passt</span>' : ''}</div></span><span class="v">${money(p.value, { short: 1 })}</span></button>`).join('')}</div>`);
+        ${img(pimg(p.img, 'medium'), 'avatar sm', p.name, initials(p.name))}<span class="grow"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.position || '')}${p.group === grp ? ' · <span class="yellow">passt</span>' : ''}</div></span><span class="v">${apps(p)} Sp.</span></button>`).join('')}</div>`);
   }
   function vTalente() {
     const seen = new Set();
@@ -1183,15 +1133,19 @@
         list.push(Object.assign({ team: k }, p));
       }
     }
-    list.sort((a, b) => (b.value || 0) - (a.value || 0));
-    const mx = (list[0] && list[0].value) || 1;
+    // Wer schon bei den Profis spielt, steht oben - danach BVB II und U19, jeweils nach Einsaetzen und Toren
+    const sOf = (p) => statsOf(p.team, p.id) || {};
+    const lvl = { profis: 2, u23: 1, u19: 0 };
+    list.sort((a, b) => (lvl[b.team] - lvl[a.team]) || ((sOf(b).apps || 0) - (sOf(a).apps || 0)) || ((sOf(b).goals || 0) - (sOf(a).goals || 0)) || (a.age - b.age));
+    const mx = Math.max(1, ...list.map((p) => sOf(p).apps || 0));
+    const line = (p) => { const s = sOf(p); return `${s.apps || 0} Sp.${s.goals ? ` · ${s.goals} ${s.goals === 1 ? 'Tor' : 'Tore'}` : ''}`; };
     let out = pageHead('Talente-<em>Radar</em>', 'Alle Spieler bis 21 Jahre', '', '#/mehr');
     if (list.length >= 3) {
-      out += `<div class="pgrid" style="grid-template-columns:repeat(3,minmax(0,1fr))">${list.slice(0, 3).map((p) => `<a class="pc" href="#/spieler/${p.team}/${p.id}" data-vt="player"><span class="pc-media" style="height:120px">${img(pimg(p.img, 'big'), '', p.name, initials(p.name), 'style="height:116px"')}</span><span class="pc-body"><span class="pc-name" style="font-size:15px">${esc(lastName(p.name))}</span><span class="pc-pos">${p.age} J. · ${esc(TEAMNAME[p.team])}</span><span class="pc-val" style="font-size:15px">${money(p.value, { short: 1 })}</span></span></a>`).join('')}</div>`;
+      out += `<div class="pgrid" style="grid-template-columns:repeat(3,minmax(0,1fr))">${list.slice(0, 3).map((p) => `<a class="pc" href="#/spieler/${p.team}/${p.id}" data-vt="player"><span class="pc-media" style="height:120px">${img(pimg(p.img, 'big'), '', p.name, initials(p.name), 'style="height:116px"')}</span><span class="pc-body"><span class="pc-name" style="font-size:15px">${esc(lastName(p.name))}</span><span class="pc-pos">${p.age} J. · ${esc(TEAMNAME[p.team])}</span><span class="pc-val" style="font-size:15px">${esc(line(p))}</span></span></a>`).join('')}</div>`;
     }
     out += `<div class="card flat" style="margin-top:14px"><div class="list">${list.slice(0, 30).map((p, i) => `<a class="li" href="#/spieler/${p.team}/${p.id}"><span class="rank">${i + 1}</span>${img(pimg(p.img, 'medium'), 'avatar sm', p.name, initials(p.name))}
-      <span class="grow" style="display:flex;flex-direction:column;gap:5px"><span class="row" style="justify-content:space-between;gap:8px"><span class="t ellipsis">${esc(p.name)}</span><span class="v">${money(p.value, { short: 1 })}${p.prevValue && p.value > p.prevValue ? ' <span class="green">▲</span>' : ''}</span></span>
-      <span class="s">${p.age} J. · ${esc(p.position || '')} · ${esc(TEAMNAME[p.team])}</span><span class="bar"><span style="width:${((p.value || 0) / mx * 100).toFixed(0)}%;animation-delay:${Math.min(i, 14) * 0.04}s"></span></span></span></a>`).join('') || '<p class="muted" style="padding:12px 0">Keine Daten.</p>'}</div></div>`;
+      <span class="grow" style="display:flex;flex-direction:column;gap:5px"><span class="row" style="justify-content:space-between;gap:8px"><span class="t ellipsis">${esc(p.name)}</span><span class="v">${esc(line(p))}</span></span>
+      <span class="s">${p.age} J. · ${esc(p.position || '')} · ${esc(TEAMNAME[p.team])}</span><span class="bar"><span style="width:${Math.max(2, (sOf(p).apps || 0) / mx * 100).toFixed(0)}%;animation-delay:${Math.min(i, 14) * 0.04}s"></span></span></span></a>`).join('') || '<p class="muted" style="padding:12px 0">Keine Daten.</p>'}</div></div>`;
     return out;
   }
   function vLazarett() {
@@ -1243,7 +1197,7 @@
   function vInfo() {
     return pageHead('Über die <em>App</em>', 'Quellen & Hinweise', '', '#/mehr') + `<section class="card" style="display:flex;flex-direction:column;gap:12px;font-size:13px;line-height:1.6">
       <p><b>BVB 09</b> ist eine inoffizielle Fan-App und nicht mit Borussia Dortmund verbunden. Namen, Wappen und Fotos gehören den jeweiligen Rechteinhabern.</p>
-      <p><b>So bleibt alles aktuell:</b> Jeden Tag um 8:17, 14:17 und 20:17 Uhr läuft ein Programm auf GitHub. Es holt Spiele und Tabellen von OpenLigaDB und Schlagzeilen über Google News. Die kostenlose <b>Gemini-KI</b> macht daraus Here-we-go-Karten, Verletzungs-News, neue Marktwerte, Vertragsverlängerungen und das KI-Briefing. Tore zählt die App live aus den Spielberichten.</p>
+      <p><b>So bleibt alles aktuell:</b> Jeden Tag um 8:17, 14:17 und 20:17 Uhr läuft ein Programm auf GitHub. Es holt Spiele und Tabellen von OpenLigaDB und Schlagzeilen über Google News. Die kostenlose <b>Gemini-KI</b> macht daraus Here-we-go-Karten, Verletzungs-News, Vertragsverlängerungen und das KI-Briefing. Statistiken kommen von ESPN, Tore zählt die App live aus den Spielberichten. Marktwerte gibt es direkt bei Transfermarkt (Transfers → TM).</p>
       <p><b>Transfermarkt</b> sperrt Server mit einem Bot-Schutz. Kader, Verträge und Statistiken stammen daher vom letzten direkten Abruf und werden über die KI-News ergänzt.</p>
       <p><b>Gerüchte-Ampel:</b> grün = sehr verlässlich (z. B. Fabrizio Romano, Sky, kicker, Ruhr Nachrichten), gelb = meist verlässlich (z. B. Bild, Sport1, Transfermarkt-Gerüchteküche). Alles andere wird gar nicht angezeigt.</p>
       <p class="faint">Alle Angaben ohne Gewähr. KI-Zusammenfassungen können Fehler enthalten.</p>
@@ -1293,7 +1247,7 @@
   // ------------------------------------------------------------------ Router
   const ROUTES = [
     [/^\/home$/, 'home', () => vHome(), 'BVB 09'],
-    [/^\/transfers(?:\/(news|werte|bilanz|vertraege))?$/, 'transfers', (m) => vTransfers(m[1] || 'news'), 'Transfers'],
+    [/^\/transfers(?:\/(news|tm|werte|bilanz|vertraege))?$/, 'transfers', (m) => vTransfers(m[1] || 'news'), 'Transfers'],
     [/^\/spiele(?:\/(profis|u23))?(?:\/(kommend|ergebnisse|tabelle|torschuetzen))?$/, 'spiele', (m) => vSpiele(m[1] || UI.spieleTeam || 'profis', m[2] || 'kommend'), 'Spiele'],
     [/^\/kader(?:\/(profis|u23|u19))?$/, 'kader', (m) => vKader(m[1] || UI.kaderTeam || 'profis'), 'Kader'],
     [/^\/spieler\/(profis|u23|u19)\/([\w-]+)$/, 'kader', (m) => vSpieler(m[1], m[2]), (m) => ((findPlayer(m[1], m[2]) || {}).name || 'Spieler')],
@@ -1353,7 +1307,6 @@
     if (opts.animate !== false) countUps(v);
     const tp = $('[data-type]', v);
     if (tp) { store.set('briefSeen', tp.dataset.type); tp.removeAttribute('data-type'); typewriter(tp); }
-    $$('.chart', v).forEach(bindChart);
   }
   function setTab(t) {
     S.tab = t;
@@ -1396,30 +1349,6 @@
       if (i < text.length) setTimeout(step, 16); else setTimeout(() => caret.remove(), 1400);
     };
     setTimeout(step, 500);
-  }
-  function bindChart(el) {
-    let pts;
-    try { pts = JSON.parse(el.dataset.chart); } catch (e) { return; }
-    const w = +el.dataset.w;
-    const tip = $('.chart-tip', el);
-    const cur = $('.chart-cursor', el);
-    const show = (clientX) => {
-      const r = el.getBoundingClientRect();
-      const sx = ((clientX - r.left) / r.width) * w;
-      let best = pts[0];
-      for (const p of pts) if (Math.abs(p[0] - sx) < Math.abs(best[0] - sx)) best = p;
-      const px = (best[0] / w) * r.width;
-      cur.style.left = px + 'px';
-      tip.style.left = Math.max(44, Math.min(r.width - 44, px)) + 'px';
-      tip.innerHTML = `${esc(money(best[3], { short: 1 }))}<small>${esc(F.date.format(new Date(best[2])))}</small>`;
-      cur.classList.add('on');
-      tip.classList.add('on');
-    };
-    const hide = () => { cur.classList.remove('on'); tip.classList.remove('on'); };
-    el.addEventListener('pointerdown', (e) => show(e.clientX));
-    el.addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse' || e.buttons) show(e.clientX); });
-    el.addEventListener('pointerleave', hide);
-    el.addEventListener('pointerup', () => setTimeout(hide, 1600));
   }
   function onScroll() {
     const isP = (S.route || '').startsWith('/spieler/');
