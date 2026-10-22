@@ -985,8 +985,9 @@
       ${p.foot ? `<div class="kv"><span>Starker Fuß</span><span>${esc(p.foot)}</span></div>` : ''}
       ${p.flags && p.flags.length ? `<div class="kv"><span>Nation</span><span>${flagImgs(p.flags)} ${esc(p.flags.map((f) => f.name).join(' / '))}</span></div>` : ''}
       <div class="kv"><span>Karten</span><span>${st.yellow || 0} Gelb · ${(st.yellowRed || 0) + (st.red || 0)} Rot</span></div>
+      ${p.aiAdded ? `<div class="kv"><span>Im Kader seit</span><span>${fmtDate(p.joined)} · ${esc(p.aiAdded)}</span></div>` : ''}
     </section>
-    <a class="btn ghost" style="margin-top:12px" href="https://www.transfermarkt.de/x/profil/spieler/${esc(id)}" target="_blank" rel="noopener">Profil auf Transfermarkt ${I.ext.replace('<svg', '<svg style="stroke:currentColor"')}</a>`;
+    ${/^\d+$/.test(id) ? `<a class="btn ghost" style="margin-top:12px" href="https://www.transfermarkt.de/x/profil/spieler/${esc(id)}" target="_blank" rel="noopener">Profil auf Transfermarkt ${I.ext.replace('<svg', '<svg style="stroke:currentColor"')}</a>` : ''}`;
     return out;
   }
 
@@ -1268,7 +1269,7 @@
     [/^\/transfers(?:\/(news|werte|bilanz|vertraege))?$/, 'transfers', (m) => vTransfers(m[1] || 'news'), 'Transfers'],
     [/^\/spiele(?:\/(profis|u23))?(?:\/(kommend|ergebnisse|tabelle|torschuetzen))?$/, 'spiele', (m) => vSpiele(m[1] || UI.spieleTeam || 'profis', m[2] || 'kommend'), 'Spiele'],
     [/^\/kader(?:\/(profis|u23|u19))?$/, 'kader', (m) => vKader(m[1] || UI.kaderTeam || 'profis'), 'Kader'],
-    [/^\/spieler\/(profis|u23|u19)\/(\d+)$/, 'kader', (m) => vSpieler(m[1], m[2]), (m) => ((findPlayer(m[1], m[2]) || {}).name || 'Spieler')],
+    [/^\/spieler\/(profis|u23|u19)\/([\w-]+)$/, 'kader', (m) => vSpieler(m[1], m[2]), (m) => ((findPlayer(m[1], m[2]) || {}).name || 'Spieler')],
     [/^\/mehr$/, 'mehr', () => vMehr(), 'Mehr'],
     [/^\/mehr\/update$/, 'mehr', () => vUpdate(), 'Update-Zentrale'],
     [/^\/mehr\/stats$/, 'mehr', () => vStats(), 'Statistiken'],

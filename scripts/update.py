@@ -1261,6 +1261,7 @@ def mod_news(state):
         injury_news = merge_injuries(injury_news, result.get('injuries') or [], state)
         gem['injuries'] = len(result.get('injuries') or [])
         gem['marketValues'] = len(result.get('marketValues') or [])
+        enrich_stories(stories, state)  # Fotos/Positionen vorher holen - neue Spieler kommen so mit Bild in den Kader
         gem['applied'] = apply_ai_updates(result, stories, state)
         b = (result.get('briefing') or '').strip()
         if b:
@@ -1429,6 +1430,44 @@ def apply_ai_updates(result, stories, state):
         if done:
             changed += 1
             state['changes'].add('squad', 'Vertrag verlängert: %s bis %s (laut %s)' % (s['player'], y.group(1), s.get('source')))
+    # Offizielle Wechsel (nur Stufe-1-Quelle) direkt im Kader nachziehen: Neuzugaenge rein, Abgaenge raus
+    pro = (squads.get('teams') or {}).get('profis')
+    for s in stories:
+        if not pro or s.get('status') != 'official' or s.get('tier') != 1 or (s.get('role') or 'Spieler') != 'Spieler':
+            continue
+        hits = find(s['player'])
+        info = s.get('playerInfo') or {}
+        if s.get('direction') == 'in' and not hits:
+            y = re.search(r'(20\d\d)', str(s.get('contractUntil') or ''))
+            pos = info.get('position') or ''
+            group = ('Torwart' if re.search(r'keeper|torw', pos, re.I) else
+                     'Abwehr' if re.search(r'back|defen|verteid', pos, re.I) else
+                     'Sturm' if re.search(r'forward|striker|wing|stürm|sturm|außen|aussen', pos, re.I) else 'Mittelfeld')
+            club = (s.get('otherClub') or {}).get('name')
+            p = {'id': 'ai-' + slug(s['player']), 'name': s['player'], 'img': info.get('img'), 'position': pos or 'Neuzugang',
+                 'group': group, 'number': None, 'captain': False, 'absences': [], 'age': info.get('age'),
+                 'value': info.get('value'), 'contract': ('%s-06-30' % y.group(1)) if y else None, 'joined': TODAY,
+                 'from': {'name': club, 'fee': s.get('fee') or '-'} if club else None,
+                 'newSigning': {'from': club, 'date': s.get('date') or TODAY, 'fee': s.get('fee') or '-'},
+                 'aiAdded': 'laut %s' % s.get('source')}
+            pro['players'].append(p)
+            pro['count'] = len(pro['players'])
+            if p['value'] and pro.get('totalValue') is not None:
+                pro['totalValue'] += p['value']
+                touched.add('profis')
+            changed += 1
+            state['changes'].add('squad', 'Neu im Kader: %s (laut %s)' % (s['player'], s.get('source')))
+        elif s.get('direction') == 'out':
+            for key, p in hits:
+                team = squads['teams'][key]
+                if p in team['players']:
+                    team['players'].remove(p)
+                    team['count'] = len(team['players'])
+                    if p.get('value') and team.get('totalValue') is not None:
+                        team['totalValue'] -= p['value']
+                        touched.add(key)
+                    changed += 1
+                    state['changes'].add('squad', 'Nicht mehr im Kader: %s (laut %s)' % (p['name'], s.get('source')))
     if changed:
         for key in touched:
             tot = hist['totals'].setdefault(key, [])
