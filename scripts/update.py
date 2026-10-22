@@ -1721,6 +1721,7 @@ def value_proof(name, v, evidence, quote=None, others=()):
     genau diese Zahl zusammen stehen - nennt der Text mehrere Spieler, im selben Satzteil."""
     parts = slug(name).split('-')
     need = parts[-1:] if len(parts[-1]) > 4 else parts  # kurze Nachnamen (z. B. Can) nur mit Vornamen
+    quote = quote if isinstance(quote, str) and quote.strip() else None
     for h in evidence or []:
         title = h.get('title') or ''
         if quote:
@@ -1768,6 +1769,8 @@ def apply_ai_updates(result, stories, state, strict=False, evidence=None):
     lasts = {k.split('-')[-1] for k in index if k}
     changed, touched = 0, set()
     for mv in result.get('marketValues') or []:
+        if not isinstance(mv, dict):
+            continue
         v = mv.get('value')
         if not isinstance(v, (int, float)) or not 10000 <= v <= 400000000 or not source_tier(mv.get('source')):
             continue
