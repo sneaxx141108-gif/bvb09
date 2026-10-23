@@ -16,7 +16,9 @@ den Fehler in der Update-Zentrale an.
 import email.utils
 import html
 import json
+import math
 import os
+import random
 import re
 import sys
 import time
@@ -765,6 +767,7 @@ ESPN = 'https://site.api.espn.com/apis/site/v2/sports/soccer'
 ESPN_CORE = 'https://sports.core.api.espn.com/v2/sports/soccer/leagues'
 ESPN_TEAM = 124
 ESPN_LEAGUES = [('ger.1', 'Bundesliga'), ('uefa.champions', 'Champions League'), ('ger.dfb_pokal', 'DFB-Pokal')]
+LG_CODE = {'ger.1': 'bl1', 'uefa.champions': 'ucl', 'ger.dfb_pokal': 'dfb'}
 
 
 def espn_stat(cats, name):
@@ -828,24 +831,31 @@ def mod_stats_espn(state):
             d['bl'] = d['bl'] or lg == 'ger.1'
             if apps:
                 d['leagues'].append(lg)
+                d.setdefault('comp', {})[lg] = {'apps': apps, 'subIn': int(espn_stat(cats, 'subIns')),
+                                                'goals': int(espn_stat(cats, 'totalGoals')), 'assists': int(espn_stat(cats, 'goalAssists')),
+                                                'yellow': int(espn_stat(cats, 'yellowCards')), 'red': int(espn_stat(cats, 'redCards'))}
         time.sleep(0.5)
     if not agg:
         raise RuntimeError('; '.join(errors) or 'ESPN lieferte keine Daten')
-    # Minuten: einmal am Tag je Spieler und Wettbewerb abfragen
+    # Minuten je Spieler und Wettbewerb: bei jedem regulaeren Update (alle ~6 Std.) und nach jedem BVB-Spiel neu
     mins = prev.get('espnMinutes') or {}
-    if mins.get('date') != TODAY:
-        by = {}
+    fin = [m['date'] for m in ((load('matches.json', {}) or {}).get('profis') or []) if m.get('finished') and m.get('date')]
+    last_end = iso(parse_dt(max(fin)) + timedelta(hours=2)) if fin and parse_dt(max(fin)) else ''
+    mins_at = mins.get('at') or ((mins.get('date') or '2000-01-01') + 'T00:00:00Z')
+    if not mins.get('byComp') or mins_at < iso(NOW - timedelta(hours=5)) or (last_end and mins_at < last_end <= iso(NOW)):
+        by, by_comp = {}, {}
         for eid, d in agg.items():
-            total = 0
+            total, per = 0, {}
             for lg in d['leagues']:
                 try:
                     j = http_json('%s/%s/seasons/%d/types/1/athletes/%s/statistics' % (ESPN_CORE, lg, SEASON, eid), timeout=30)
-                    total += int(espn_stat((j.get('splits') or {}).get('categories'), 'minutes'))
+                    per[lg] = int(espn_stat((j.get('splits') or {}).get('categories'), 'minutes'))
+                    total += per[lg]
                 except Exception:
                     pass
                 time.sleep(0.25)
-            by[eid] = total
-        mins = {'date': TODAY, 'byId': by}
+            by[eid], by_comp[eid] = total, per
+        mins = {'date': TODAY, 'at': iso(NOW), 'byId': by, 'byComp': by_comp}
     players = pro['players']
     by_slug = {slug(p['name']): p for p in players}
 
@@ -898,6 +908,8 @@ def mod_stats_espn(state):
         m = (mins.get('byId') or {}).get(eid)
         if m:
             rec['minutes'] = m
+        per = (mins.get('byComp') or {}).get(eid) or {}
+        rec['byComp'] = {LG_CODE[lg]: dict(v, minutes=per.get(lg, 0)) for lg, v in (d.get('comp') or {}).items() if lg in LG_CODE}
         if (o.get('apps'), o.get('goals'), o.get('assists'), o.get('minutes')) != (rec['apps'], rec['goals'], rec['assists'], rec.get('minutes')):
             changed += 1
         new[p['id']] = rec
@@ -962,6 +974,194 @@ def mod_stats_espn(state):
     if changed:
         state['changes'].add('stats', 'Statistiken aktualisiert bei %d Spielern (ESPN)' % changed, count=changed)
     return {'ok': True, 'count': matched, 'warning': '; '.join(errors) or None}
+
+
+# --------------------------------------------------------------------------- Saison: Fieberkurve, Prognose, Torjaeger
+def final_result(m):
+    fr = next((r for r in m.get('matchResults') or [] if r.get('resultTypeID') == 2), None)
+    return (fr['pointsTeam1'], fr['pointsTeam2']) if fr else None
+
+
+def md_of(m):
+    return (m.get('group') or {}).get('groupOrderID') or 0
+
+
+def bl_standings(matches, upto=None, before=None):
+    """Tabelle aus OpenLigaDB-Spielen: nur beendete Spiele, optional bis Spieltag `upto` oder vor Spieltag `before`."""
+    tab = {}
+    for m in matches:
+        for t in (m['team1'], m['team2']):
+            tab.setdefault(str(t['teamId']), {'id': str(t['teamId']), 'team': t.get('teamName'), 'short': t.get('shortName'),
+                                              'icon': t.get('teamIconUrl'), 'played': 0, 'won': 0, 'draw': 0, 'lost': 0,
+                                              'goals': 0, 'against': 0, 'points': 0})
+    for m in matches:
+        md = md_of(m)
+        fr = final_result(m)
+        if not m.get('matchIsFinished') or not fr or (upto is not None and md > upto) or (before is not None and md >= before):
+            continue
+        a, b = tab[str(m['team1']['teamId'])], tab[str(m['team2']['teamId'])]
+        g1, g2 = fr
+        for r, gf, ga in ((a, g1, g2), (b, g2, g1)):
+            r['played'] += 1
+            r['goals'] += gf
+            r['against'] += ga
+            if gf > ga:
+                r['won'] += 1
+                r['points'] += 3
+            elif gf == ga:
+                r['draw'] += 1
+                r['points'] += 1
+            else:
+                r['lost'] += 1
+    rows = sorted(tab.values(), key=lambda r: (-r['points'], -(r['goals'] - r['against']), -r['goals'], r['team'] or ''))
+    for i, r in enumerate(rows):
+        r['pos'] = i + 1
+        r['diff'] = r['goals'] - r['against']
+        r['isBVB'] = is_bvb(r['team'] or '')
+    return rows
+
+
+def fever_curve(matches):
+    """BVB-Platz und -Punkte nach jedem Spieltag."""
+    out = []
+    for md in sorted({md_of(m) for m in matches if m.get('matchIsFinished')} - {0}):
+        me = next((r for r in bl_standings(matches, upto=md) if r['isBVB']), None)
+        if me and me['played']:
+            out.append([md, me['pos'], me['points']])
+    return out
+
+
+def poisson(rng, lam):
+    lim, k, p = math.exp(-lam), 0, 1.0
+    while True:
+        p *= rng.random()
+        if p <= lim:
+            return k
+        k += 1
+
+
+def season_forecast(matches, sims=4000):
+    """Monte-Carlo-Simulation der Restsaison (Poisson-Modell aus Angriffs- und Abwehrstaerke, Heimvorteil)."""
+    played = [m for m in matches if m.get('matchIsFinished') and final_result(m)]
+    remaining = [m for m in matches if not m.get('matchIsFinished')]
+    if len(played) < 18 or not remaining:
+        return None
+    hg = sum(final_result(m)[0] for m in played)
+    ag = sum(final_result(m)[1] for m in played)
+    n = len(played)
+    avg_h, avg_a, avg = hg / n, ag / n, (hg + ag) / (2 * n)
+    st = {}
+    for m in played:
+        g1, g2 = final_result(m)
+        for t, gf, ga in ((str(m['team1']['teamId']), g1, g2), (str(m['team2']['teamId']), g2, g1)):
+            s = st.setdefault(t, [0, 0, 0])
+            s[0] += gf
+            s[1] += ga
+            s[2] += 1
+    k = 6  # wenige Spiele -> Staerken vorsichtig Richtung Ligaschnitt ziehen
+    att = {t: ((s[0] + k * avg) / (s[2] + k)) / avg for t, s in st.items()}
+    dfn = {t: ((s[1] + k * avg) / (s[2] + k)) / avg for t, s in st.items()}
+    base = bl_standings(matches)
+    pts0 = {r['id']: r['points'] for r in base}
+    gd0 = {r['id']: r['diff'] for r in base}
+    gf0 = {r['id']: r['goals'] for r in base}
+    games = []
+    for m in remaining:
+        t1, t2 = str(m['team1']['teamId']), str(m['team2']['teamId'])
+        games.append((t1, t2, avg_h * att.get(t1, 1) * dfn.get(t2, 1), avg_a * att.get(t2, 1) * dfn.get(t1, 1)))
+    rng = random.Random(1000 + n)
+    counts = {t: [0] * (len(base) + 1) for t in pts0}
+    exp_pts = dict.fromkeys(pts0, 0.0)
+    for _ in range(sims):
+        pts, gd, gf = dict(pts0), dict(gd0), dict(gf0)
+        for t1, t2, l1, l2 in games:
+            g1, g2 = poisson(rng, l1), poisson(rng, l2)
+            gd[t1] += g1 - g2
+            gd[t2] += g2 - g1
+            gf[t1] += g1
+            gf[t2] += g2
+            if g1 > g2:
+                pts[t1] += 3
+            elif g1 < g2:
+                pts[t2] += 3
+            else:
+                pts[t1] += 1
+                pts[t2] += 1
+        for i, t in enumerate(sorted(pts, key=lambda t: (-pts[t], -gd[t], -gf[t], rng.random()))):
+            counts[t][i + 1] += 1
+        for t in pts:
+            exp_pts[t] += pts[t]
+    nt = len(base)
+    pct = lambda t, lo, hi: round(100.0 * sum(counts[t][lo:hi + 1]) / sims, 1)  # noqa: E731
+    teams = []
+    for r in base:
+        t = r['id']
+        teams.append({'id': t, 'team': r['team'], 'short': r['short'], 'icon': r['icon'], 'pos': r['pos'], 'points': r['points'],
+                      'isBVB': r['isBVB'], 'expPoints': round(exp_pts[t] / sims, 1), 'title': pct(t, 1, 1), 'cl': pct(t, 1, 4),
+                      'el': pct(t, 5, 5), 'ecl': pct(t, 6, 6), 'rel': pct(t, nt - 2, nt - 2), 'down': pct(t, nt - 1, nt),
+                      'dist': [round(100.0 * c / sims, 1) for c in counts[t][1:]]})
+    teams.sort(key=lambda x: -x['expPoints'])
+    return {'sims': sims, 'played': n, 'remaining': len(remaining), 'teams': teams}
+
+
+def scorer_teams(matches):
+    """Torschuetzen-ID -> Verein (aus den Toren der Saison, Eigentore zaehlen fuer den Gegner)."""
+    out = {}
+    for m in matches:
+        last = (0, 0)
+        for g in sorted(m.get('goals') or [], key=lambda g: (g.get('matchMinute') or 0, g.get('goalID') or 0)):
+            s = (g.get('scoreTeam1') or 0, g.get('scoreTeam2') or 0)
+            side = m['team1'] if s[0] > last[0] else m['team2']
+            if g.get('isOwnGoal'):
+                side = m['team2'] if side is m['team1'] else m['team1']
+            if g.get('goalGetterID'):
+                out[g['goalGetterID']] = side
+            last = s
+    return out
+
+
+def mod_season(state):
+    """Fieberkurve (mit Vorsaison), Saison-Prognose, Liga-Torjaeger und Basis-Tabelle fuer die Live-Konferenz."""
+    cur = oldb('/getmatchdata/bl1/%d' % SEASON)
+    if not cur:
+        raise RuntimeError('keine Bundesliga-Spiele')
+    out = {'updatedAt': iso(NOW), 'season': SEASON}
+    errors = []
+    out['fever'] = {'cur': fever_curve(cur)}
+    try:
+        out['fever']['prev'] = fever_curve(oldb('/getmatchdata/bl1/%d' % (SEASON - 1)))
+    except Exception as e:
+        errors.append('Vorsaison: %s' % e)
+    try:
+        out['forecast'] = season_forecast(cur)
+    except Exception as e:
+        errors.append('Prognose: %s' % e)
+    try:
+        teams = scorer_teams(cur)
+        sc = []
+        for g in (oldb('/getgoalgetters/bl1/%d' % SEASON) or [])[:25]:
+            t = teams.get(g.get('goalGetterId')) or {}
+            sc.append({'name': g.get('goalGetterName'), 'goals': g.get('goalCount') or 0, 'team': t.get('teamName'),
+                       'short': t.get('shortName'), 'icon': t.get('teamIconUrl'), 'isBVB': is_bvb(t.get('teamName') or '')})
+        out['scorers'] = sc
+    except Exception as e:
+        errors.append('Torjäger: %s' % e)
+    try:
+        md = int((oldb('/getcurrentgroup/bl1') or {}).get('groupOrderID') or 0)
+    except Exception:
+        md = 0
+    if not md:
+        open_mds = [md_of(m) for m in cur if not m.get('matchIsFinished')]
+        md = min(open_mds) if open_mds else max(md_of(m) for m in cur)
+    out['konferenz'] = {'matchday': md, 'base': [{k: r[k] for k in ('id', 'team', 'short', 'icon', 'played', 'won', 'draw', 'lost', 'goals', 'against', 'points')}
+                                                 for r in bl_standings(cur, before=md)]}
+    prev = load('season.json', {}) or {}
+    old_title = ((next((t for t in ((prev.get('forecast') or {}).get('teams') or []) if t.get('isBVB')), None)) or {}).get('title')
+    new_t = next((t for t in ((out.get('forecast') or {}).get('teams') or []) if t.get('isBVB')), None)
+    if new_t and old_title is not None and abs(new_t['title'] - old_title) >= 5:
+        state['changes'].add('table', 'Meister-Chance BVB: %s %% → %s %%' % (str(old_title).replace('.', ','), str(new_t['title']).replace('.', ',')))
+    save('season.json', out)
+    return {'ok': True, 'count': len(out['fever']['cur']), 'warning': '; '.join(errors) or None}
 
 
 # --------------------------------------------------------------------------- Spieltag-Zentrale
@@ -1158,9 +1358,9 @@ def form_line(form):
 
 def mc_gemini(state, prompt):
     key = os.environ.get('GEMINI_API_KEY', '').strip()
-    if not key:
+    if not ai_available():
         raise RuntimeError('Kein GEMINI_API_KEY gesetzt')
-    models = state.get('gemini_models') or gemini_models(key)
+    models = state.get('gemini_models') or (gemini_models(key) if key else [])
     state['gemini_models'] = models
     data, model, _ = gemini_call(key, models, prompt, False, state.setdefault('mc_attempts', []))
     return data, model
@@ -1255,6 +1455,94 @@ def make_month(state, ym, games, squads):
     return {'text': text[:600], 'at': iso(NOW)} if text else None
 
 
+BVB_YT = 'UCK8rTVgp3-MebXkmeJcQb1Q'  # offizieller BVB-Kanal: Highlights (v. a. Champions League) und Pressekonferenzen
+SIP = {'lat': 51.4926, 'lon': 7.4519, 'place': 'Signal Iduna Park'}
+NOMINATIM_UA = 'bvb09-fanapp/1.0 (github.com/sneaxx141108-gif/bvb09)'
+
+
+def yt_videos(channel):
+    """Neueste Videos eines YouTube-Kanals ueber den oeffentlichen RSS-Feed (ohne Schluessel)."""
+    out = []
+    try:
+        root = ET.fromstring(http_get('https://www.youtube.com/feeds/videos.xml?channel_id=' + channel, retries=1))
+    except Exception as e:
+        log('  YouTube: %s' % e)
+        return out
+    ns = {'a': 'http://www.w3.org/2005/Atom', 'yt': 'http://www.youtube.com/xml/schemas/2015'}
+    for en in root.findall('a:entry', ns):
+        vid = en.findtext('yt:videoId', namespaces=ns)
+        if vid:
+            out.append({'id': vid, 'title': (en.findtext('a:title', namespaces=ns) or '').strip(), 'published': en.findtext('a:published', namespaces=ns) or ''})
+    return out
+
+
+def opp_hit(title, opp):
+    words = slug(title).split('-')
+    return any(t in words for t in name_tokens(opp.get('name') or '') | name_tokens(opp.get('short') or ''))
+
+
+def geocode(queries):
+    """Koordinaten zu Stadion oder Stadt: OpenStreetMap (Nominatim), sonst Open-Meteo."""
+    for q in [x for x in queries if x]:
+        try:
+            r = http_json('https://nominatim.openstreetmap.org/search?' + urllib.parse.urlencode({'q': q, 'format': 'json', 'limit': 1}),
+                          headers={'User-Agent': NOMINATIM_UA}, timeout=20)
+            time.sleep(1.1)  # Nutzungsregel: hoechstens 1 Anfrage pro Sekunde
+            if r:
+                return {'lat': round(float(r[0]['lat']), 4), 'lon': round(float(r[0]['lon']), 4), 'place': q.split(',')[0]}
+        except Exception:
+            pass
+        try:
+            r = http_json('https://geocoding-api.open-meteo.com/v1/search?' + urllib.parse.urlencode({'name': q.split(',')[0], 'count': 1, 'language': 'de', 'format': 'json'}), timeout=20)
+            hit = (r.get('results') or [None])[0]
+            if hit:
+                return {'lat': round(hit['latitude'], 4), 'lon': round(hit['longitude'], 4), 'place': hit.get('name') or q}
+        except Exception:
+            pass
+    return None
+
+
+def venue_for(m, venues):
+    """Spielort: Heimspiele im Signal Iduna Park, auswaerts das Stadion des Gegners (einmal gesucht, dann gemerkt)."""
+    if m.get('isHome'):
+        return SIP
+    opp = m['home']
+    key = opp.get('id') or slug(opp.get('name') or '')
+    v = venues.get(key)
+    if v and (v.get('lat') or (v.get('miss') or '') > (NOW - timedelta(days=7)).strftime('%Y-%m-%d')):
+        return v if v.get('lat') else None
+    queries = []
+    try:
+        t = ((tsdb('/searchteams.php?t=' + urllib.parse.quote(opp.get('name') or '')) or {}).get('teams') or [None])[0] or {}
+        loc = [x.strip() for x in (t.get('strStadiumLocation') or t.get('strLocation') or '').split(',') if x.strip()]
+        if t.get('strStadium'):
+            queries.append(', '.join([t['strStadium']] + loc[-2:]))
+        queries += [', '.join(loc[i:]) for i in range(len(loc))]
+    except Exception as e:
+        log('  Stadion %s: %s' % (opp.get('name'), e))
+    queries.append(match_word(opp))
+    v = geocode(queries)
+    venues[key] = v or {'miss': TODAY}
+    return v
+
+
+def weather_at(v, ko):
+    """Wettervorhersage zur Anstosszeit (Open-Meteo, kostenlos, ohne Schluessel)."""
+    d = http_json('https://api.open-meteo.com/v1/forecast?' + urllib.parse.urlencode({
+        'latitude': v['lat'], 'longitude': v['lon'], 'hourly': 'temperature_2m,precipitation_probability,weather_code,wind_speed_10m',
+        'timezone': 'UTC', 'forecast_days': 16}), timeout=30)
+    h = d.get('hourly') or {}
+    hour = (ko + timedelta(minutes=30)).replace(minute=0, second=0, microsecond=0)
+    key = hour.strftime('%Y-%m-%dT%H:00')
+    times = h.get('time') or []
+    if key not in times:
+        return None
+    i = times.index(key)
+    val = lambda k: (h.get(k) or [None] * len(times))[i]  # noqa: E731
+    return {'temp': val('temperature_2m'), 'rain': val('precipitation_probability'), 'code': val('weather_code'),
+            'wind': val('wind_speed_10m'), 'place': v.get('place'), 'at': iso(NOW)}
+
+
 def mod_matchcenter(state):
     """Spieltag-Zentrale: ESPN-Zuordnung, Gegner-Check, Spielerwerte je Spiel, KI-Vorbericht, KI-Spielbericht, Monatsfazit."""
     prev = load('matchcenter.json', {}) or {}
@@ -1268,6 +1556,8 @@ def mod_matchcenter(state):
     if not ms:
         raise RuntimeError('keine Spiele')
     errors, made = [], []
+    venues = prev.get('venues') or {}
+    videos = yt_videos(BVB_YT)
     events = espn_events()
     match_player = squad_matcher(pro)
     nxt = next((m for m in ms if not m.get('finished') and parse_dt(m['date']) and parse_dt(m['date']) > NOW - timedelta(hours=3)), None)
@@ -1330,6 +1620,26 @@ def mod_matchcenter(state):
                     errors.append('ESPN-Vorschau: %s' % ex)
             o['at'] = iso(NOW)
             e['opponent'] = o
+        # Wetter zum Anpfiff (bis 10 Tage vorher)
+        if not m.get('finished') and NOW < ko < NOW + timedelta(days=10):
+            try:
+                v = venue_for(m, venues)
+                w = weather_at(v, ko) if v else None
+                if w:
+                    e['weather'] = w
+            except Exception as ex:
+                errors.append('Wetter: %s' % ex)
+        # Videos vom offiziellen BVB-Kanal: Pressekonferenz vor/nach dem Spiel, Highlights nach dem Spiel
+        opp_t = m['away'] if m['isHome'] else m['home']
+        for vd in videos:
+            pub = parse_dt(vd['published'])
+            if not pub or not (ko - timedelta(days=3) < pub < ko + timedelta(days=4)) or not opp_hit(vd['title'], opp_t):
+                continue
+            item = {'id': vd['id'], 'title': vd['title'][:140], 'published': vd['published']}
+            if re.search(r'highlight', vd['title'], re.I) and pub > ko:
+                e['video'] = item
+            elif re.search(r'(^|\W)PK(\W|$)|pressekonferenz|press conference', vd['title'], re.I):
+                e['pkAfter' if pub > ko else 'pk'] = item
         # Spielerwerte je Spiel (fuer Formkurve und Spielbericht) - fertige Spiele einmal abholen
         if m.get('finished') and e.get('espn') and not (e.get('game') or {}).get('players'):
             try:
@@ -1383,7 +1693,7 @@ def mod_matchcenter(state):
             errors.append('Monatsfazit: %s' % ex)
     keep = {m['id'] for m in ms}
     out = {'updatedAt': iso(NOW), 'season': SEASON, 'matches': {k: v for k, v in mc.items() if k in keep and v},
-           'months': months, 'attempts': (state.get('mc_attempts') or [])[-6:]}
+           'months': months, 'venues': venues, 'attempts': (state.get('mc_attempts') or [])[-6:]}
     save('matchcenter.json', out)
     return {'ok': True, 'count': len(out['matches']), 'made': made, 'warning': '; '.join(errors)[:300] or None}
 
@@ -1481,9 +1791,64 @@ def gemini_models(key):
     return order[:6]
 
 
-def gemini_call(key, models, prompt, grounded, attempts=None):
+GROQ = 'https://api.groq.com/openai/v1'
+GROQ_PREFS = ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile', 'qwen/qwen3-32b', 'openai/gpt-oss-20b', 'llama-3.1-8b-instant']
+
+
+def groq_models(key):
+    """Verfuegbare Groq-Modelle: bevorzugte zuerst (so laeuft es weiter, wenn Groq Modelle austauscht)."""
+    ids = []
+    try:
+        data = http_json(GROQ + '/models', headers={'Authorization': 'Bearer ' + key}, timeout=30)
+        ids = [m.get('id') for m in data.get('data') or [] if m.get('id') and m.get('active', True)]
+    except Exception as e:
+        log('  Groq Modellliste: %s' % e)
+    ids = [i for i in ids if not re.search(r'whisper|tts|guard|vision|embed|audio|playai|compound|safeguard', i, re.I)]
+    return ([m for m in GROQ_PREFS if m in ids] or ids[:3] or GROQ_PREFS[:2])[:3]
+
+
+def groq_call(prompt, attempts=None):
+    """Ersatz-KI, wenn Gemini nicht antwortet (kostenloser Groq-Schluessel als GitHub-Secret GROQ_API_KEY)."""
+    key = os.environ.get('GROQ_API_KEY', '').strip()
+    if not key:
+        raise RuntimeError('kein GROQ_API_KEY')
+    # Gratis-Kontingent (ca. 8.000 Tokens pro Minute): lange Prompts hinten kuerzen - dort stehen die aeltesten Schlagzeilen
+    if len(prompt) > 13000:
+        prompt = prompt[:13000].rsplit('\n', 1)[0]
     last = None
-    for model in models:
+    for model in groq_models(key):
+        body = {'model': model, 'temperature': 0.2, 'max_tokens': 3500, 'response_format': {'type': 'json_object'},
+                'messages': [{'role': 'system', 'content': 'Du antwortest ausschließlich mit gültigem JSON.'},
+                             {'role': 'user', 'content': prompt}]}
+        try:
+            res = http_json(GROQ + '/chat/completions', body=body, headers={'Authorization': 'Bearer ' + key}, timeout=120)
+            txt = ((res.get('choices') or [{}])[0].get('message') or {}).get('content') or ''
+            data = extract_json(txt)
+            if data is None:
+                raise RuntimeError('Antwort war kein JSON')
+            return data, 'groq:' + model, []
+        except urllib.error.HTTPError as e:
+            detail = ''
+            try:
+                detail = json.loads(e.read().decode('utf-8')).get('error', {}).get('message', '')[:160]
+            except Exception:
+                pass
+            last = 'groq:%s: HTTP %s %s' % (model, e.code, detail)
+        except Exception as e:
+            last = 'groq:%s: %s' % (model, e)
+        if attempts is not None:
+            attempts.append(str(last)[:200])
+    raise RuntimeError(last or 'Groq nicht verfügbar')
+
+
+def ai_available():
+    return bool(os.environ.get('GEMINI_API_KEY', '').strip() or os.environ.get('GROQ_API_KEY', '').strip())
+
+
+def gemini_call(key, models, prompt, grounded, attempts=None):
+    """Gemini zuerst; antwortet kein Gemini-Modell, springt (ohne Google-Suche) die Ersatz-KI Groq ein."""
+    last = None
+    for model in (models if key else []):
         body = {'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],
                 'generationConfig': {'temperature': 0.2, 'maxOutputTokens': 16384}}
         if grounded:
@@ -1524,6 +1889,11 @@ def gemini_call(key, models, prompt, grounded, attempts=None):
                 if attempts is not None:
                     attempts.append(str(last)[:200])
                 break
+    if not grounded and os.environ.get('GROQ_API_KEY', '').strip():
+        try:
+            return groq_call(prompt, attempts)
+        except Exception as e:
+            last = ('%s | %s' % (last, e)) if last else str(e)
     raise RuntimeError(last or 'kein Modell verfügbar')
 
 
@@ -1635,10 +2005,10 @@ def mod_news(state):
            'headlines': len(headlines_all), 'stories': 0}
     key = os.environ.get('GEMINI_API_KEY', '').strip()
     result = None
-    if not key:
+    if not ai_available():
         gem['error'] = 'Kein GEMINI_API_KEY gesetzt'
     else:
-        models = gemini_models(key)
+        models = gemini_models(key) if key else []
         state['gemini_models'] = models
         candidates = ([h for h in headlines_all if bvb_re.search(h['title'])] or headlines_all)[:120]
         attempts = []
@@ -1691,8 +2061,12 @@ def mod_news(state):
                     'reason': str(md.get('reason') or '').strip()[:220] or None, 'at': iso(NOW)}
             mood_hist = [h for h in mood_hist if h[0] != TODAY] + [[TODAY, score]]
     # Alte Storys aufraeumen (45 Tage ohne Neuigkeit), Verletzungs-News nach 21 Tagen
-    limit = (NOW - timedelta(days=45)).strftime('%Y-%m-%d')
-    stories = [s for s in stories if (s.get('updatedAt') or s.get('createdAt') or TODAY) >= limit][:60]
+    # Abgeschlossenes (offiziell, Here we go, Verlaengerung, Dementi) 45 Tage, offene Geruechte bis zum Abschluss -
+    # nur wenn 4 Monate lang gar nichts Neues kommt, fliegen sie raus
+    lim_done = (NOW - timedelta(days=45)).strftime('%Y-%m-%d')
+    lim_open = (NOW - timedelta(days=120)).strftime('%Y-%m-%d')
+    stories = [s for s in stories if (s.get('updatedAt') or s.get('createdAt') or TODAY)
+               >= (lim_open if s.get('status') in ('interest', 'talks', 'advanced') else lim_done)][:80]
     ilimit = (NOW - timedelta(days=21)).strftime('%Y-%m-%d')
     injury_news = [i for i in injury_news if (i.get('date') or TODAY) >= ilimit][:40]
     enrich_stories(stories, state)
@@ -1704,6 +2078,9 @@ def mod_news(state):
 
 
 def merge_stories(stories, found, headlines, state):
+    for s in stories:  # aeltere Eintraege ohne Uhrzeit nachruesten (fuer die 30-Stunden-Regel der Story-Kreise)
+        s.setdefault('addedAt', (s.get('createdAt') or TODAY) + 'T06:00:00Z')
+        s.setdefault('statusAt', s['addedAt'])
     by_key = {s['key']: s for s in stories}
     for f in found:
         player = (f.get('player') or '').strip()
@@ -1733,7 +2110,8 @@ def merge_stories(stories, found, headlines, state):
                  'feeValue': f.get('feeValue') if isinstance(f.get('feeValue'), (int, float)) else None,
                  'bonus': f.get('bonus'), 'contractUntil': f.get('contractUntil'), 'loan': bool(f.get('loan')),
                  'source': f.get('source'), 'tier': tier, 'probability': prob, 'summary': entry['text'], 'date': entry['date'],
-                 'createdAt': TODAY, 'updatedAt': TODAY, 'updates': [entry], 'links': urls[:4]}
+                 'createdAt': TODAY, 'updatedAt': TODAY, 'addedAt': iso(NOW), 'statusAt': iso(NOW),
+                 'updates': [entry], 'links': urls[:4]}
             stories.append(s)
             by_key[key] = s
             arrow = '→ BVB' if direction == 'in' else 'verlängert' if direction == 'extension' else '← weg vom BVB'
@@ -1744,6 +2122,7 @@ def merge_stories(stories, found, headlines, state):
         if status != s['status'] and (STATUS_RANK[status] >= STATUS_RANK.get(s['status'], 0) or status == 'denied'):
             state['changes'].add('stories', 'Status: %s jetzt %s' % (player, STATUS_LABEL[status]))
             s['status'] = status
+            s['statusAt'] = iso(NOW)
             changed = True
         for fld in ('fee', 'bonus', 'contractUntil'):
             if f.get(fld) and f.get(fld) != s.get(fld):
@@ -1970,6 +2349,7 @@ def next_runs():
 MODULES = [
     # Server (GitHub + Gemini) - laeuft 3x taeglich automatisch
     ('matches', 'Spiele & Tabelle (OpenLigaDB)', mod_matches, 'server'),
+    ('season', 'Saison: Fieberkurve, Prognose & Torjäger (OpenLigaDB)', mod_season, 'server'),
     ('stats_espn', 'Statistiken & Kader (ESPN)', mod_stats_espn, 'server'),
     ('news', 'Transfer-News, Verletzungen & Verträge (Gemini)', mod_news, 'server'),
     ('matchcenter', 'Spieltag-Zentrale: Vor- und Spielberichte (Gemini)', mod_matchcenter, 'server'),
@@ -1989,7 +2369,7 @@ def main():
     elif not args:
         kind = 'pc'
     else:
-        kind = 'server' if all(k in ('matches', 'stats_espn', 'news', 'matchcenter', 'all') for k in args) else 'pc'
+        kind = 'server' if all(k in ('matches', 'season', 'stats_espn', 'news', 'matchcenter', 'all') for k in args) else 'pc'
     status_file = 'status.json' if kind == 'server' else 'status-pc.json'
     prev_status = load(status_file, {}) or {}
     modules = [m for m in MODULES if m[3] == kind or 'all' in args]
