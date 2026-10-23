@@ -964,6 +964,430 @@ def mod_stats_espn(state):
     return {'ok': True, 'count': matched, 'warning': '; '.join(errors) or None}
 
 
+# --------------------------------------------------------------------------- Spieltag-Zentrale
+ESPN_LG = {'bl1': 'ger.1', 'ucl': 'uefa.champions', 'dfb': 'ger.dfb_pokal'}
+GENERIC_TOKENS = {'fc', 'sc', 'sv', 'cf', 'ac', 'as', 'afc', 'club', 'de', 'the', '1', 'fk', 'sk', 'bk', 'if', 'ss',
+                  'calcio', 'football', 'futbol', 'borussia', 'real', 'sporting', 'olympique', 'stade', 'ssc', 'vfb', 'vfl'}
+
+
+def parse_dt(s):
+    """ISO-Zeit von OpenLigaDB/ESPN (mit oder ohne Sekunden, mit Z) als aware datetime."""
+    try:
+        d = datetime.fromisoformat((s or '').replace('Z', '+00:00'))
+        return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def to_berlin(dt):
+    """UTC -> deutsche Ortszeit (MEZ/MESZ-Regel wie berlin_to_utc, ohne zusaetzliche Pakete)."""
+    u = dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+    def last_sunday(year, month):
+        d = datetime(year, month + 1, 1) - timedelta(days=1)
+        return d - timedelta(days=(d.weekday() + 1) % 7)
+    start, end = last_sunday(u.year, 3).replace(hour=1), last_sunday(u.year, 10).replace(hour=1)
+    return u + timedelta(hours=2 if start <= u < end else 1)
+
+
+def name_tokens(name):
+    return {t for t in slug(name).split('-') if t and t not in GENERIC_TOKENS and len(t) > 1}
+
+
+def best_row(rows, name):
+    """Tabellenzeile zu einem Vereinsnamen aus einer anderen Quelle (gemeinsame Namensteile)."""
+    want = name_tokens(name)
+    scored = sorted(((len(want & name_tokens(r.get('team') or '')), r) for r in rows), key=lambda x: -x[0])
+    if scored and scored[0][0] and (len(scored) == 1 or scored[0][0] > scored[1][0]):
+        return scored[0][1]
+    return None
+
+
+def squad_matcher(players):
+    """Spielername (ESPN) -> Spieler-ID im App-Kader: exakter Name, eindeutiger Nachname oder Rueckennummer."""
+    by_slug = {slug(p['name']): p for p in players}
+
+    def match(name, jersey=None):
+        s = slug(name or '')
+        if s in by_slug:
+            return by_slug[s]['id']
+        last = s.split('-')[-1] if s else ''
+        cands = [p for p in players if last and slug(p['name']).split('-')[-1] == last]
+        if len(cands) == 1:
+            return cands[0]['id']
+        if jersey:
+            cands = [p for p in (cands or players) if str(p.get('number') or '') == str(jersey)]
+            if len(cands) == 1:
+                return cands[0]['id']
+        return None
+    return match
+
+
+def espn_events():
+    """Alle BVB-Spiele bei ESPN (gespielt und kommend): [(liga, event-id, datetime)]."""
+    out = []
+    for lg in sorted(set(ESPN_LG.values())):
+        for q in ('', '?fixture=true'):
+            try:
+                d = http_json('%s/%s/teams/%d/schedule%s' % (ESPN, lg, ESPN_TEAM, q), timeout=30)
+            except Exception as e:
+                log('  ESPN-Spielplan %s: %s' % (lg, e))
+                continue
+            for e in d.get('events') or []:
+                dt = parse_dt(e.get('date'))
+                if dt and e.get('id'):
+                    out.append((lg, str(e['id']), dt))
+    return out
+
+
+def espn_form(team):
+    """Letzte 5 Pflichtspiele aus ESPN 'lastFiveGames' aus Sicht des Teams."""
+    out = []
+    evs = [e for e in team.get('events') or [] if 'friendly' not in (e.get('leagueName') or '').lower()]
+    for e in sorted(evs, key=lambda e: e.get('gameDate') or '')[-5:]:
+        away = e.get('atVs') == '@'
+        try:
+            mine, other = int(e.get('awayTeamScore' if away else 'homeTeamScore')), int(e.get('homeTeamScore' if away else 'awayTeamScore'))
+        except (TypeError, ValueError):
+            continue
+        r = 'W' if mine > other else 'L' if mine < other else 'D'
+        out.append({'r': r, 'score': '%d:%d' % (mine, other), 'opp': (e.get('opponent') or {}).get('displayName'),
+                    'home': not away, 'date': (e.get('gameDate') or '')[:10], 'comp': e.get('leagueAbbreviation')})
+    return out
+
+
+def game_from_summary(d, match_player):
+    """Spieler- und Teamwerte des BVB aus einem fertigen ESPN-Spiel (Minuten aus Wechseln/Platzverweisen)."""
+    comp = ((d.get('header') or {}).get('competitions') or [{}])[0]
+    stype = ((comp.get('status') or {}).get('type') or {})
+    if not stype.get('completed'):
+        return None
+    total = 120 if re.search(r'AET|PEN|EXTRA', stype.get('name') or '', re.I) else 90
+    sub_in, sub_out, red = {}, {}, {}
+    for ev in d.get('keyEvents') or []:
+        t = ((ev.get('type') or {}).get('text') or '').lower()
+        m = re.match(r'(\d+)', ((ev.get('clock') or {}).get('displayValue') or ''))
+        if not m:
+            continue
+        mn = min(int(m.group(1)), total)
+        ids = [str((p.get('athlete') or {}).get('id')) for p in ev.get('participants') or []]
+        if 'substitution' in t and len(ids) >= 2:
+            sub_in[ids[0]], sub_out[ids[1]] = mn, mn
+        elif 'red card' in t and ids:
+            red[ids[0]] = mn
+    players = {}
+    for r in d.get('rosters') or []:
+        if str((r.get('team') or {}).get('id')) != str(ESPN_TEAM):
+            continue
+        for a in r.get('roster') or []:
+            ath = a.get('athlete') or {}
+            st = {s.get('name'): s.get('value') or 0 for s in a.get('stats') or []}
+            if not int(st.get('appearances') or 0):
+                continue
+            aid = str(ath.get('id'))
+            on = 0 if a.get('starter') else sub_in.get(aid)
+            off = min(sub_out.get(aid, total), red.get(aid, total))
+            pid = match_player(ath.get('displayName') or ath.get('fullName'), a.get('jersey'))
+            if not pid:
+                continue
+            players[pid] = {'min': max(1, off - on) if on is not None else None, 'g': int(st.get('totalGoals') or 0),
+                            'a': int(st.get('goalAssists') or 0), 'y': int(st.get('yellowCards') or 0),
+                            'r': int(st.get('redCards') or 0), 's': bool(a.get('starter')),
+                            'sh': int(st.get('totalShots') or 0), 'sv': int(st.get('saves') or 0)}
+    teams = {}
+    for t in (d.get('boxscore') or {}).get('teams') or []:
+        key = 'bvb' if str((t.get('team') or {}).get('id')) == str(ESPN_TEAM) else 'opp'
+        s = {x.get('name'): x.get('displayValue') for x in t.get('statistics') or []}
+        teams[key] = {k: s.get(k) for k in ('possessionPct', 'totalShots', 'shotsOnTarget', 'wonCorners', 'foulsCommitted',
+                                           'yellowCards', 'redCards', 'accuratePasses', 'totalPasses', 'saves', 'offsides')}
+    gi = d.get('gameInfo') or {}
+    return {'players': players, 'teams': teams, 'venue': (gi.get('venue') or {}).get('fullName'),
+            'attendance': gi.get('attendance') or None}
+
+
+def gnews(q, days=3, lang='de'):
+    """Eine Google-News-Suche (fuer Vor- und Spielberichte)."""
+    params = {'q': '%s when:%dd' % (q, days), 'hl': 'de' if lang == 'de' else 'en-US', 'gl': 'DE' if lang == 'de' else 'US',
+              'ceid': 'DE:de' if lang == 'de' else 'US:en'}
+    out = []
+    try:
+        root = ET.fromstring(http_get('https://news.google.com/rss/search?' + urllib.parse.urlencode(params), retries=1))
+    except Exception as e:
+        log('  News "%s": %s' % (q, e))
+        return out
+    for it in root.iter('item'):
+        title = (it.findtext('title') or '').strip()
+        src = it.find('source')
+        outlet = (src.text or '').strip() if src is not None else ''
+        if outlet and title.endswith(' - ' + outlet):
+            title = title[:-(len(outlet) + 3)].strip()
+        try:
+            dt = email.utils.parsedate_to_datetime(it.findtext('pubDate'))
+        except Exception:
+            dt = NOW
+        out.append({'title': title, 'outlet': outlet, 'date': iso(dt)})
+    out.sort(key=lambda h: h['date'], reverse=True)
+    return out
+
+
+def match_word(opp):
+    """Kurzer Suchbegriff fuer den Gegner (z. B. 'Frankfurt')."""
+    toks = [t for t in re.split(r'[\s.]+', opp.get('short') or opp.get('name') or '') if len(t) > 2 and slug(t) not in GENERIC_TOKENS]
+    return toks[-1] if toks else (opp.get('short') or opp.get('name') or '')
+
+
+def absences_text(squads, news):
+    out = []
+    pro = ((squads.get('teams') or {}).get('profis') or {}).get('players') or []
+    inj = {slug(i['player']): i for i in (news.get('injuryNews') or [])}
+    for p in pro:
+        n = inj.get(slug(p['name']))
+        if n and n.get('status') in ('fit', 'back'):
+            continue
+        texts = [a['text'] for a in p.get('absences') or [] if a.get('type') != 'ineligible']
+        if n and n.get('status') in ('injured', 'doubtful', 'suspended'):
+            texts.append('%s (%s, laut %s)' % (INJ_LABEL.get(n['status'], ''), n.get('text') or '', n.get('source') or '?'))
+        if texts:
+            out.append('%s: %s' % (p['name'], '; '.join(texts)))
+    return out
+
+
+def form_line(form):
+    return ', '.join('%s %s %s' % ({'W': 'S', 'D': 'U', 'L': 'N'}[f['r']], f['score'], f.get('opp') or '') for f in form) or 'k. A.'
+
+
+def mc_gemini(state, prompt):
+    key = os.environ.get('GEMINI_API_KEY', '').strip()
+    if not key:
+        raise RuntimeError('Kein GEMINI_API_KEY gesetzt')
+    models = state.get('gemini_models') or gemini_models(key)
+    state['gemini_models'] = models
+    data, model, _ = gemini_call(key, models, prompt, False, state.setdefault('mc_attempts', []))
+    return data, model
+
+
+def make_preview(state, m, entry, squads, news):
+    opp = m['away'] if m['isHome'] else m['home']
+    o = entry.get('opponent') or {}
+    heads = gnews('BVB %s' % match_word(opp), days=4)[:25]
+    ko = parse_dt(m['date'])
+    prompt = (
+        'Du schreibst den Vorbericht für eine Borussia-Dortmund-Fan-App. Heute ist %s.\n'
+        'SPIEL: %s – %s, %s%s, Anstoß %s Uhr (deutsche Zeit), BVB spielt %s.\n'
+        'BVB-FORM: %s\nGEGNER-FORM: %s\nTABELLE: BVB %s, Gegner %s\nDIREKTER VERGLEICH (aus BVB-Sicht): %s\n'
+        'BVB-AUSFÄLLE: %s\n\nSCHLAGZEILEN ZUM SPIEL (neueste zuerst):\n%s\n\n'
+        'AUFGABE: Antworte NUR mit JSON: {"text":"4-5 sachliche Sätze auf Deutsch","keyPoints":["kurzer Fakt","kurzer Fakt",'
+        '"kurzer Fakt"],"tip":{"bvb":2,"opp":1},"tipReason":"ein kurzer Satz"}\n'
+        'Regeln: Nur Fakten aus den Angaben oben, nichts erfinden, keine Aufstellung erfinden. '
+        'Was du nicht sicher weißt, lässt du weg. tip = deine realistische Ergebnis-Prognose (Tore BVB, Tore Gegner).'
+        % (TODAY, m['home']['name'], m['away']['name'], m.get('comp') or '', (' · ' + m['round']) if m.get('round') else '',
+           to_berlin(ko).strftime('%d.%m. %H:%M') if ko else 'k. A.', 'zu Hause' if m['isHome'] else 'auswärts',
+           form_line(o.get('bvbForm') or []), form_line(o.get('form') or []),
+           ('Platz %s (%s Pkt.)' % (o['bvbTable']['pos'], o['bvbTable']['points'])) if o.get('bvbTable') else 'k. A.',
+           ('Platz %s (%s Pkt.)' % (o['table']['pos'], o['table']['points'])) if o.get('table') else 'k. A.',
+           ('%d Siege, %d Remis, %d Niederlagen' % (o['h2h']['w'], o['h2h']['d'], o['h2h']['l'])) if o.get('h2h') else 'k. A.',
+           '; '.join(absences_text(squads, news)) or 'keine bekannt',
+           '\n'.join('- %s | %s | %s' % (h['date'][:10], h['outlet'], h['title']) for h in heads) or 'keine'))
+    data, model = mc_gemini(state, prompt)
+    text = (data.get('text') or '').strip()
+    if not text:
+        raise RuntimeError('Gemini lieferte keinen Vorbericht')
+    tip = data.get('tip') or {}
+    try:
+        tip = {'bvb': int(tip.get('bvb')), 'opp': int(tip.get('opp'))}
+        if not (0 <= tip['bvb'] <= 9 and 0 <= tip['opp'] <= 9):
+            tip = None
+    except (TypeError, ValueError, AttributeError):
+        tip = None
+    return {'text': text[:1200], 'keyPoints': [str(k).strip()[:140] for k in (data.get('keyPoints') or []) if str(k).strip()][:4],
+            'tip': tip, 'tipReason': (data.get('tipReason') or '').strip()[:200] or None, 'at': iso(NOW), 'model': model}
+
+
+def make_report(state, m, entry, squads):
+    opp = m['away'] if m['isHome'] else m['home']
+    game = entry.get('game') or {}
+    pro = ((squads.get('teams') or {}).get('profis') or {}).get('players') or []
+    names = {p['id']: p['name'] for p in pro}
+    pl = sorted(((names.get(pid), v) for pid, v in (game.get('players') or {}).items() if names.get(pid)),
+                key=lambda x: (-(x[1]['g'] * 3 + x[1]['a'] * 2), -(x[1]['min'] or 0)))
+    goals = ', '.join('%s\' %s%s%s (%s)' % (g.get('minute') or '?', g.get('scorer') or '?', ' (E)' if g.get('penalty') else '',
+                                              ' (ET)' if g.get('ownGoal') else '', g.get('score')) for g in m.get('goals') or [])
+    tb, to = (game.get('teams') or {}).get('bvb') or {}, (game.get('teams') or {}).get('opp') or {}
+    stats = ('Ballbesitz %s%% : %s%%, Schüsse %s : %s, aufs Tor %s : %s, Ecken %s : %s' % (
+        tb.get('possessionPct'), to.get('possessionPct'), tb.get('totalShots'), to.get('totalShots'),
+        tb.get('shotsOnTarget'), to.get('shotsOnTarget'), tb.get('wonCorners'), to.get('wonCorners'))) if tb else 'k. A.'
+    heads = [h for h in gnews('BVB %s' % match_word(opp), days=2) if h['date'] >= m['date']][:25]
+    prompt = (
+        'Du schreibst den Spielbericht für eine Borussia-Dortmund-Fan-App.\n'
+        'SPIEL: %s %s:%s %s (%s%s), Halbzeit %s.\nTORE: %s\nSTATISTIK (BVB : Gegner): %s\n'
+        'BVB-SPIELER (Tore/Vorlagen/Minuten): %s\n\nSCHLAGZEILEN NACH DEM SPIEL:\n%s\n\n'
+        'AUFGABE: Antworte NUR mit JSON: {"text":"4-6 sachliche Sätze auf Deutsch","highlights":["kurzer Satz","kurzer Satz"],'
+        '"motm":"Vorname Nachname oder null"}\n'
+        'Regeln: Nur Fakten aus den Angaben oben, nichts erfinden. motm = Spieler des Spiels beim BVB, nur wenn die '
+        'Schlagzeilen ihn hervorheben oder er klar durch Tore/Vorlagen herausragt, sonst null.'
+        % (m['home']['name'], m['score'][0], m['score'][1], m['away']['name'], m.get('comp') or '',
+           (' · ' + m['round']) if m.get('round') else '', ('%s:%s' % tuple(m['half'])) if m.get('half') else 'k. A.',
+           goals or 'keine', stats,
+           '; '.join('%s %d/%d/%s' % (n, v['g'], v['a'], v['min'] if v['min'] is not None else '?') for n, v in pl[:14]) or 'k. A.',
+           '\n'.join('- %s | %s' % (h['outlet'], h['title']) for h in heads) or 'keine'))
+    data, model = mc_gemini(state, prompt)
+    text = (data.get('text') or '').strip()
+    if not text:
+        raise RuntimeError('Gemini lieferte keinen Spielbericht')
+    motm = None
+    if data.get('motm'):
+        pid = squad_matcher(pro)(str(data['motm']))
+        motm = {'id': pid, 'name': names[pid]} if pid else None
+    return {'text': text[:1400], 'highlights': [str(h).strip()[:160] for h in (data.get('highlights') or []) if str(h).strip()][:4],
+            'motm': motm, 'at': iso(NOW), 'model': model, 'headlines': len(heads)}
+
+
+def make_month(state, ym, games, squads):
+    lines = []
+    for m in games:
+        lines.append('%s %s %s:%s %s (%s), Torschützen BVB: %s' % (
+            m['date'][:10], m['home']['name'], m['score'][0], m['score'][1], m['away']['name'], m.get('comp') or '',
+            ', '.join(g.get('scorer') or '?' for g in m.get('goals') or [] if g['team'] == ('home' if m['isHome'] else 'away') and not g.get('ownGoal')) or '-'))
+    prompt = ('Fasse den Monat %s von Borussia Dortmund für eine Fan-App zusammen: 2-3 sachliche Sätze auf Deutsch, '
+              'nur aus diesen Ergebnissen, nichts erfinden.\n%s\nAntworte NUR mit JSON: {"text":"..."}' % (ym, '\n'.join(lines)))
+    data, model = mc_gemini(state, prompt)
+    text = (data.get('text') or '').strip()
+    return {'text': text[:600], 'at': iso(NOW)} if text else None
+
+
+def mod_matchcenter(state):
+    """Spieltag-Zentrale: ESPN-Zuordnung, Gegner-Check, Spielerwerte je Spiel, KI-Vorbericht, KI-Spielbericht, Monatsfazit."""
+    prev = load('matchcenter.json', {}) or {}
+    mc = prev.get('matches') or {}
+    months = prev.get('months') or {}
+    ms = (load('matches.json', {}) or {}).get('profis') or []
+    squads = load('squads.json', {}) or {}
+    news = load('news.json', {}) or {}
+    tables = load('tables.json', {}) or {}
+    pro = ((squads.get('teams') or {}).get('profis') or {}).get('players') or []
+    if not ms:
+        raise RuntimeError('keine Spiele')
+    errors, made = [], []
+    events = espn_events()
+    match_player = squad_matcher(pro)
+    nxt = next((m for m in ms if not m.get('finished') and parse_dt(m['date']) and parse_dt(m['date']) > NOW - timedelta(hours=3)), None)
+    last_fin = [m for m in ms if m.get('finished') and m.get('score')]
+    last = last_fin[-1] if last_fin else None
+    for m in ms:
+        e = mc.setdefault(m['id'], {})
+        ko = parse_dt(m['date'])
+        if not ko:
+            continue
+        lg = ESPN_LG.get(m.get('compShort'))
+        if lg and not e.get('espn'):
+            cands = sorted((abs((dt - ko).total_seconds()), eid) for l2, eid, dt in events if l2 == lg)
+            if cands and cands[0][0] <= 6 * 3600:
+                e['espn'] = {'lg': lg, 'id': cands[0][1]}
+        upcoming = not m.get('finished') and ko - NOW < timedelta(days=14)
+        # Gegner-Check fuer kommende Spiele (bis zum Anpfiff aktualisieren)
+        if upcoming and ko > NOW:
+            opp, bvb = (m['away'], m['home']) if m['isHome'] else (m['home'], m['away'])
+            o = dict(e.get('opponent') or {})
+            key = 'ucl' if m.get('compShort') == 'ucl' else 'bl1' if m.get('compShort') == 'bl1' else None
+            rows = (tables.get(key) or {}).get('rows') or [] if key else []
+            if rows:
+                row = next((r for r in rows if r.get('id') == opp.get('id')), None) or best_row(rows, opp.get('name') or '')
+                me = next((r for r in rows if r.get('isBVB')), None)
+                o['table'] = {k: row.get(k) for k in ('pos', 'points', 'played', 'diff')} if row else None
+                o['bvbTable'] = {k: me.get(k) for k in ('pos', 'points', 'played', 'diff')} if me else None
+                o['tableName'] = (tables.get(key) or {}).get('name')
+            try:
+                h2h = oldb('/getmatchdata/%s/%s' % (bvb.get('id') or 7, opp.get('id'))) if opp.get('id') else []
+                games = []
+                for g in sorted(h2h, key=lambda g: g.get('matchDateTimeUTC') or ''):
+                    if not g.get('matchIsFinished'):
+                        continue
+                    fr = next((r for r in g.get('matchResults') or [] if r.get('resultTypeID') == 2), None)
+                    if not fr:
+                        continue
+                    home_bvb = is_bvb(g['team1']['teamName'])
+                    mine, other = (fr['pointsTeam1'], fr['pointsTeam2']) if home_bvb else (fr['pointsTeam2'], fr['pointsTeam1'])
+                    games.append({'date': (g.get('matchDateTimeUTC') or '')[:10], 'comp': g.get('leagueName'),
+                                  'home': home_bvb, 'score': '%d:%d' % (fr['pointsTeam1'], fr['pointsTeam2']),
+                                  'r': 'W' if mine > other else 'L' if mine < other else 'D'})
+                o['h2h'] = {'w': sum(1 for g in games if g['r'] == 'W'), 'd': sum(1 for g in games if g['r'] == 'D'),
+                            'l': sum(1 for g in games if g['r'] == 'L'), 'last': games[-5:][::-1]}
+            except Exception as ex:
+                errors.append('Vergleich %s: %s' % (opp.get('name'), ex))
+            if e.get('espn') and (m is nxt or ko - NOW < timedelta(days=4)):
+                try:
+                    d = http_json('%s/%s/summary?event=%s' % (ESPN, e['espn']['lg'], e['espn']['id']), timeout=40)
+                    for t in d.get('lastFiveGames') or []:
+                        f = espn_form(t)
+                        if str((t.get('team') or {}).get('id')) == str(ESPN_TEAM):
+                            o['bvbForm'] = f
+                        else:
+                            o['form'] = f
+                    venue = ((d.get('gameInfo') or {}).get('venue') or {}).get('fullName')
+                    if venue:
+                        e['venue'] = venue
+                except Exception as ex:
+                    errors.append('ESPN-Vorschau: %s' % ex)
+            o['at'] = iso(NOW)
+            e['opponent'] = o
+        # Spielerwerte je Spiel (fuer Formkurve und Spielbericht) - fertige Spiele einmal abholen
+        if m.get('finished') and e.get('espn') and not (e.get('game') or {}).get('players'):
+            try:
+                d = http_json('%s/%s/summary?event=%s' % (ESPN, e['espn']['lg'], e['espn']['id']), timeout=40)
+                g = game_from_summary(d, match_player)
+                if g:
+                    e['game'] = g
+                time.sleep(0.4)
+            except Exception as ex:
+                errors.append('ESPN-Spiel %s: %s' % (m['id'], ex))
+    # KI-Vorbericht fuer das naechste Spiel (ab 48 Std. vorher, am Spieltag einmal auffrischen)
+    if nxt:
+        e = mc[nxt['id']]
+        ko = parse_dt(nxt['date'])
+        pv = e.get('preview') or {}
+        age = NOW - (parse_dt(pv.get('at')) or NOW - timedelta(days=9))
+        if NOW < ko and ko - NOW < timedelta(hours=48) and (not pv or (ko - NOW < timedelta(hours=10) and age > timedelta(hours=10))):
+            try:
+                e['preview'] = make_preview(state, nxt, e, squads, news)
+                made.append('Vorbericht')
+                state['changes'].add('matches', 'KI-Vorbericht: %s – %s' % (nxt['home']['short'] or nxt['home']['name'], nxt['away']['short'] or nxt['away']['name']))
+            except Exception as ex:
+                errors.append('Vorbericht: %s' % ex)
+    # KI-Spielbericht fuer das letzte Spiel (einmal sofort, ein zweites Mal mit mehr Schlagzeilen)
+    if last and NOW - parse_dt(last['date']) < timedelta(days=7):
+        e = mc[last['id']]
+        rp = e.get('report') or {}
+        ko = parse_dt(last['date'])
+        redo = rp and rp.get('v', 1) < 2 and parse_dt(rp.get('at')) and parse_dt(rp['at']) - ko < timedelta(hours=5) and NOW - ko > timedelta(hours=7)
+        if not rp or redo:
+            try:
+                r = make_report(state, last, e, squads)
+                r['v'] = rp.get('v', 0) + 1
+                e['report'] = r
+                made.append('Spielbericht')
+                if not rp:
+                    state['changes'].add('matches', 'KI-Spielbericht: %s %s:%s %s' % (
+                        last['home']['short'] or last['home']['name'], last['score'][0], last['score'][1], last['away']['short'] or last['away']['name']))
+            except Exception as ex:
+                errors.append('Spielbericht: %s' % ex)
+    # Monatsfazit fuer den vergangenen Monat
+    ym_prev = (NOW.replace(day=1) - timedelta(days=1)).strftime('%Y-%m')
+    games = [m for m in last_fin if m['date'][:7] == ym_prev]
+    if games and ym_prev not in months:
+        try:
+            r = make_month(state, ym_prev, games, squads)
+            if r:
+                months[ym_prev] = r
+                made.append('Monatsfazit')
+        except Exception as ex:
+            errors.append('Monatsfazit: %s' % ex)
+    keep = {m['id'] for m in ms}
+    out = {'updatedAt': iso(NOW), 'season': SEASON, 'matches': {k: v for k, v in mc.items() if k in keep and v},
+           'months': months, 'attempts': (state.get('mc_attempts') or [])[-6:]}
+    save('matchcenter.json', out)
+    return {'ok': True, 'count': len(out['matches']), 'made': made, 'warning': '; '.join(errors)[:300] or None}
+
+
 # --------------------------------------------------------------------------- News + Gemini
 NEWS_QUERIES = [
     ('BVB Transfer', 'de'), ('Borussia Dortmund Transfer', 'de'), ('BVB Wechsel', 'de'),
@@ -1168,7 +1592,9 @@ def build_prompt(headlines, squads, stories, grounded):
         'WICHTIG: Nur Infos, die wirklich in den Schlagzeilen bzw. der Suche stehen. Die Transfermarkt-Liste unten ist nur zur '
         'Orientierung - wiederhole sie NICHT. Gibt es keine neuen Meldungen, gib eine leere Liste zurück.\n'
         '2) "briefing": 3-4 kurze, sachliche Sätze auf Deutsch mit den wichtigsten BVB-News des Tages '
-        '(Ergebnisse, Verletzungen, Transfers). Nichts erfinden.\n\n'
+        '(Ergebnisse, Verletzungen, Transfers). Nichts erfinden.\n'
+        '3) "mood": Stimmung rund um den BVB laut den Schlagzeilen (Fans und Medien): score 0-100 (0 = Krise, '
+        '50 = normal, 100 = Euphorie), label = 1-2 Wörter auf Deutsch, reason = ein kurzer Satz.\n\n'
         'Antworte NUR mit JSON in genau diesem Format:\n'
         '{"stories":[{"key":"spieler-name|in","player":"Vorname Nachname","role":"Spieler|Trainer|Funktionär",'
         '"direction":"in|out|extension","otherClub":"Vereinsname oder null",'
@@ -1179,7 +1605,7 @@ def build_prompt(headlines, squads, stories, grounded):
         '"injuries":[{"player":"Vorname Nachname","status":"injured|doubtful|back|fit|suspended",'
         '"text":"kurz auf Deutsch, z.B. Muskelfaserriss, fällt ca. 3 Wochen aus","expectedReturn":"z.B. Mitte November oder null",'
         '"source":"Medium","date":"YYYY-MM-DD"}],'
-        '"briefing":"..."}\n'
+        '"briefing":"...","mood":{"score":60,"label":"Zuversicht","reason":"..."}}\n'
         'Höchstens 20 Storys, die wichtigsten und neuesten zuerst. Keine Storys ohne BVB-Bezug.\n\n')
     task += 'AKTUELLE BVB-KADER (wer hier steht und wechseln soll = direction "out"):\n' + '\n'.join(names) + '\n\n'
     task += 'ZULETZT BEKANNTE AUSFÄLLE (nur zur Orientierung, nicht wiederholen):\n' + ('\n'.join(missing) or 'niemand') + '\n\n'
@@ -1213,6 +1639,7 @@ def mod_news(state):
         gem['error'] = 'Kein GEMINI_API_KEY gesetzt'
     else:
         models = gemini_models(key)
+        state['gemini_models'] = models
         candidates = ([h for h in headlines_all if bvb_re.search(h['title'])] or headlines_all)[:120]
         attempts = []
         gem['attempts'] = attempts
@@ -1241,6 +1668,8 @@ def mod_news(state):
         gem['headlinesAnalyzed'] = len(candidates)
     injury_news = prev.get('injuryNews') or []
     briefing = prev.get('briefing')
+    mood = prev.get('mood')
+    mood_hist = prev.get('moodHistory') or []
     if result is not None:
         stories = merge_stories(stories, result.get('stories') or [], candidates, state)
         gem['dropped'] = state.get('dropped', [])[:10]
@@ -1252,6 +1681,15 @@ def mod_news(state):
         b = (result.get('briefing') or '').strip()
         if b:
             briefing = {'text': b[:900], 'at': iso(NOW)}
+        md = result.get('mood') or {}
+        try:
+            score = int(md.get('score'))
+        except (TypeError, ValueError, AttributeError):
+            score = None
+        if score is not None and 0 <= score <= 100:
+            mood = {'score': score, 'label': str(md.get('label') or '').strip()[:30] or None,
+                    'reason': str(md.get('reason') or '').strip()[:220] or None, 'at': iso(NOW)}
+            mood_hist = [h for h in mood_hist if h[0] != TODAY] + [[TODAY, score]]
     # Alte Storys aufraeumen (45 Tage ohne Neuigkeit), Verletzungs-News nach 21 Tagen
     limit = (NOW - timedelta(days=45)).strftime('%Y-%m-%d')
     stories = [s for s in stories if (s.get('updatedAt') or s.get('createdAt') or TODAY) >= limit][:60]
@@ -1259,7 +1697,8 @@ def mod_news(state):
     injury_news = [i for i in injury_news if (i.get('date') or TODAY) >= ilimit][:40]
     enrich_stories(stories, state)
     save('news.json', {'updatedAt': iso(NOW), 'stories': stories, 'headlines': shown[:60],
-                       'injuryNews': injury_news, 'briefing': briefing, 'gemini': gem})
+                       'injuryNews': injury_news, 'briefing': briefing, 'gemini': gem,
+                       'mood': mood, 'moodHistory': mood_hist[-90:]})
     state['gemini'] = gem
     return {'ok': True, 'count': len(stories), 'warning': gem['error'] if not gem['used'] else None}
 
@@ -1533,6 +1972,7 @@ MODULES = [
     ('matches', 'Spiele & Tabelle (OpenLigaDB)', mod_matches, 'server'),
     ('stats_espn', 'Statistiken & Kader (ESPN)', mod_stats_espn, 'server'),
     ('news', 'Transfer-News, Verletzungen & Verträge (Gemini)', mod_news, 'server'),
+    ('matchcenter', 'Spieltag-Zentrale: Vor- und Spielberichte (Gemini)', mod_matchcenter, 'server'),
     # Transfermarkt direkt - sperrt Server per Bot-Schutz, klappt nur von einem normalen Internetanschluss
     ('squads', 'Kader & Verträge (Transfermarkt)', mod_squads, 'pc'),
     ('stats', 'Statistiken (Transfermarkt)', mod_stats, 'pc'),
@@ -1549,7 +1989,7 @@ def main():
     elif not args:
         kind = 'pc'
     else:
-        kind = 'server' if all(k in ('matches', 'stats_espn', 'news', 'all') for k in args) else 'pc'
+        kind = 'server' if all(k in ('matches', 'stats_espn', 'news', 'matchcenter', 'all') for k in args) else 'pc'
     status_file = 'status.json' if kind == 'server' else 'status-pc.json'
     prev_status = load(status_file, {}) or {}
     modules = [m for m in MODULES if m[3] == kind or 'all' in args]

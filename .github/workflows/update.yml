@@ -4,13 +4,15 @@ on:
   schedule:
     # 3x taeglich um 8:17, 14:17 und 20:17 Uhr deutscher Zeit.
     # GitHub rechnet in UTC. Deshalb stehen hier die Zeiten fuer Sommer- UND Winterzeit;
-    # der Schritt "Uhrzeit pruefen" laesst nur die jeweils passenden Laeufe durch.
+    # der Schritt "Uhrzeit pruefen" (scripts/gate.py) laesst nur die jeweils passenden Laeufe durch.
+    # Der stuendliche Eintrag arbeitet nur an Spieltagen (7 Std. vor bis 4 Std. nach dem Anpfiff).
     - cron: '17 6 * * *'
     - cron: '17 7 * * *'
     - cron: '17 12 * * *'
     - cron: '17 13 * * *'
     - cron: '17 18 * * *'
     - cron: '17 19 * * *'
+    - cron: '47 * * * *'
   workflow_dispatch:
   push:
     branches: [main]
@@ -32,18 +34,11 @@ jobs:
     outputs:
       run: ${{ steps.gate.outputs.run }}
     steps:
+      - uses: actions/checkout@v7
+
       - name: Uhrzeit pruefen
         id: gate
-        run: |
-          if [ "${{ github.event_name }}" != "schedule" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          H=$(echo "${{ github.event.schedule }}" | awk '{print $2}')
-          OFF=$(TZ=Europe/Berlin date +%z | cut -c2-3)
-          L=$(( (10#$H + 10#$OFF) % 24 ))
-          echo "UTC-Stunde $H, Abstand $OFF Std. -> deutsche Stunde $L"
-          if [ "$L" = "8" ] || [ "$L" = "14" ] || [ "$L" = "20" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; else echo "run=false" >> "$GITHUB_OUTPUT"; fi
-
-      - uses: actions/checkout@v7
-        if: steps.gate.outputs.run == 'true'
+        run: python3 scripts/gate.py "${{ github.event_name }}" "${{ github.event.schedule }}" >> "$GITHUB_OUTPUT"
 
       - name: Daten holen und mit Gemini auswerten
         if: steps.gate.outputs.run == 'true'
