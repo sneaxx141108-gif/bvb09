@@ -5,7 +5,8 @@ on:
     # 3x taeglich um 8:17, 14:17 und 20:17 Uhr deutscher Zeit.
     # GitHub rechnet in UTC. Deshalb stehen hier die Zeiten fuer Sommer- UND Winterzeit;
     # der Schritt "Uhrzeit pruefen" (scripts/gate.py) laesst nur die jeweils passenden Laeufe durch.
-    # Der stuendliche Eintrag arbeitet nur an Spieltagen (7 Std. vor bis 4 Std. nach dem Anpfiff).
+    # Der stuendliche Eintrag arbeitet an BVB-Spieltagen (7 Std. vor bis 4 Std. nach dem Anpfiff) und kurz nach
+    # jedem Bundesliga- und Champions-League-Spiel (dann nur Spiele, Prognosen, Statistiken, Spieltag-Zentrale).
     - cron: '17 6 * * *'
     - cron: '17 7 * * *'
     - cron: '17 12 * * *'
@@ -40,12 +41,16 @@ jobs:
         id: gate
         run: python3 scripts/gate.py "${{ github.event_name }}" "${{ github.event.schedule }}" >> "$GITHUB_OUTPUT"
 
-      - name: Daten holen und mit Gemini auswerten
+      - name: Daten holen, Prognosen rechnen und mit Gemini auswerten
         if: steps.gate.outputs.run == 'true'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # Ersatz-KIs (alle kostenlos) - springen der Reihe nach ein, wenn Gemini nicht antwortet
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-        run: python3 scripts/update.py
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        run: python3 scripts/update.py ${{ steps.gate.outputs.modules }}
 
       - name: Daten speichern
         if: steps.gate.outputs.run == 'true'

@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """BVB 09 Fan-App - automatisches Daten-Update.
 
-Laeuft 3x taeglich auf GitHub Actions (kostenlos) und braucht nur die
-Python-Standardbibliothek. Holt:
-  * Kader, Vertraege, Verletzungen, Statistiken,
-    Transfers und Geruechtekueche von Transfermarkt
-  * Spiele, Live-Ergebnisse und Tabellen von OpenLigaDB (Champions-League-Tabelle von ESPN)
+Laeuft 3x taeglich auf GitHub Actions (kostenlos), zusaetzlich nach jedem Bundesliga-
+und Champions-League-Spiel, und braucht nur die Python-Standardbibliothek. Holt:
+  * Spiele, Live-Ergebnisse und Tabellen von OpenLigaDB und ESPN
+  * Statistiken, Kader und Wettquoten von ESPN
   * Transfer-Schlagzeilen ueber Google News
-und laesst die Schlagzeilen von der kostenlosen Gemini-KI auswerten
-(Here we go / Geruecht / Abloese / Boni / Quelle).
+Die Prognosen (Saison, Champions League, KI-Tipp) rechnet forecast.py - ganz ohne KI.
+Die Schlagzeilen wertet die kostenlose Gemini-KI aus (Here we go / Geruecht / Abloese /
+Verletzungen); antwortet Gemini nicht, springen kostenlose Ersatz-KIs ein.
+Kader/Transfers von Transfermarkt gehen nur von einem normalen PC aus (Bot-Schutz).
 
 Faellt eine Quelle aus, bleiben die alten Daten stehen und die App zeigt
 den Fehler in der Update-Zentrale an.
@@ -29,6 +30,9 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import forecast as fcst  # noqa: E402  (Prognose-Rechner im selben Ordner)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'docs', 'data')
@@ -736,7 +740,8 @@ def espn_table(lg):
         st = {x.get('name'): x.get('value') for x in e.get('stats') or []}
         n = lambda k: int(st.get(k) or 0)  # noqa: E731
         name = t.get('displayName') or '?'
-        rows.append({'pos': n('rank') or len(rows) + 1, 'team': name, 'short': t.get('shortDisplayName') or t.get('abbreviation'),
+        rows.append({'pos': n('rank') or len(rows) + 1, 'team': cl_de(name) if lg == 'uefa.champions' else name,
+                     'short': t.get('shortDisplayName') or t.get('abbreviation'),
                      'icon': (t.get('logos') or [{}])[0].get('href'), 'id': 'espn-%s' % t.get('id'),
                      'played': n('gamesPlayed'), 'won': n('wins'), 'draw': n('ties'), 'lost': n('losses'),
                      'goals': n('pointsFor'), 'against': n('pointsAgainst'), 'diff': n('pointDifferential'),
@@ -1120,6 +1125,183 @@ def scorer_teams(matches):
     return out
 
 
+# --------------------------------------------------------------------------- Prognose-Modell: Spielstaerken aus Ergebnissen + Wettquoten
+FC_LEAGUES = [('bl', 'ger.1'), ('cl', 'uefa.champions'), ('dfb', 'ger.dfb_pokal')]
+ESPN_BVB = '124'
+ESPN_ALIAS = {'FC Cologne': 'Köln', 'Hamburg SV': 'Hamburger SV', 'Nuremberg': 'Nürnberg', 'Bayern Munich': 'Bayern München',
+              'Hertha Berlin': 'Hertha BSC', 'Fortuna Dusseldorf': 'Düsseldorf'}
+CL_DE = {'Bayern Munich': 'Bayern München', 'Internazionale': 'Inter Mailand', 'AS Roma': 'AS Rom', 'Napoli': 'SSC Neapel',
+         'Sporting CP': 'Sporting Lissabon', 'Slavia Prague': 'Slavia Prag', 'Sparta Prague': 'Sparta Prag',
+         'Shakhtar Donetsk': 'Schachtar Donezk', 'Club Brugge': 'FC Brügge', 'Bodo/Glimt': 'Bodø/Glimt', 'AEK Athens': 'AEK Athen',
+         'Fenerbahce': 'Fenerbahçe', 'Feyenoord Rotterdam': 'Feyenoord', 'Viking FK': 'Viking Stavanger', 'LASK Linz': 'LASK',
+         'Juventus': 'Juventus Turin', 'AC Milan': 'AC Mailand', 'Benfica': 'Benfica Lissabon', 'Olympiacos': 'Olympiakos Piräus',
+         'Red Bull Salzburg': 'RB Salzburg', 'Celtic': 'Celtic Glasgow', 'Rangers': 'Glasgow Rangers', 'FC Copenhagen': 'FC Kopenhagen',
+         'FK Qarabag': 'Qarabağ Ağdam', 'Red Star Belgrade': 'Roter Stern Belgrad', 'Young Boys': 'Young Boys Bern',
+         'Tottenham Hotspur': 'Tottenham', 'Newcastle United': 'Newcastle', 'Atalanta': 'Atalanta Bergamo', 'Real Betis': 'Betis Sevilla',
+         'Villarreal': 'FC Villarreal', 'Como': 'Como 1907', 'Lens': 'RC Lens', 'Lille': 'OSC Lille', 'Sabah FK': 'Sabah Baku',
+         'Ajax Amsterdam': 'Ajax', 'Galatasaray': 'Galatasaray', 'Sevilla': 'FC Sevilla', 'Marseille': 'Olympique Marseille',
+         'Lyon': 'Olympique Lyon', 'Girona': 'FC Girona', 'Bologna': 'FC Bologna', 'Aston Villa': 'Aston Villa'}
+ROUND_DE = {'league-phase': 'Ligaphase', 'knockout-round-playoffs': 'Playoffs', 'round-of-16': 'Achtelfinale',
+            'quarterfinals': 'Viertelfinale', 'semifinals': 'Halbfinale', 'final': 'Finale'}
+NEXT_KEY = {'knockout-round-playoffs': 'r16', 'round-of-16': 'qf', 'quarterfinals': 'sf', 'semifinals': 'final', 'final': 'win'}
+
+
+def cl_de(name):
+    return CL_DE.get(name, name)
+
+
+def espn_season(lg, season):
+    """Alle Spiele eines ESPN-Wettbewerbs in einer Saison (gespielt und kommend, mit Wettquoten)."""
+    out = {}
+    for y in (season, season + 1):
+        try:
+            d = http_json('%s/%s/scoreboard?limit=1000&dates=%d' % (ESPN, lg, y), timeout=60)
+        except Exception as e:
+            if y == season:
+                raise
+            log('  ESPN %s %d: %s' % (lg, y, e))
+            continue
+        for e in d.get('events') or []:
+            if (e.get('season') or {}).get('year') == season:
+                ev = fcst.norm_event(e)
+                if ev:
+                    out[ev['id']] = ev
+    return sorted(out.values(), key=lambda e: e['date'] or '')
+
+
+def compact(events):
+    return [[e['date'], e['home']['id'], e['away']['id'], e['hs'], e['as'], int(bool(e.get('neutral')))] for e in events if e['done']]
+
+
+def uncompact(rows):
+    return [{'date': r[0], 'home': {'id': r[1]}, 'away': {'id': r[2]}, 'hs': r[3], 'as': r[4], 'neutral': bool(r[5]), 'done': True}
+            for r in rows]
+
+
+def build_model(state):
+    """Spielstaerken aller Bundesliga- und CL-Teams. Wettquoten werden gesammelt - ESPN zeigt sie nur vor dem Spiel."""
+    store = load('model.json', {}) or {}
+    if store.get('season') != SEASON:
+        store = {'season': SEASON, 'market': {}}  # neue Saison: Quoten-Archiv und Vorsaison neu anlegen
+    events = {}
+    for key, lg in FC_LEAGUES:
+        try:
+            events[key] = espn_season(lg, SEASON)
+        except Exception as e:
+            if key != 'dfb':
+                raise
+            events[key] = []
+            log('  DFB-Pokal (ESPN): %s' % e)
+    if not store.get('prev'):
+        store['prev'] = {'bl': compact(espn_season('ger.1', SEASON - 1)), 'cl': compact(espn_season('uefa.champions', SEASON - 1)),
+                         'at': iso(NOW)}
+    market = store.get('market') or {}
+    for key in ('bl', 'cl', 'dfb'):
+        for e in events[key]:
+            od = e.get('odds')
+            if e['done'] or not od:
+                continue
+            k = [round(od['ph'], 4), round(od['pd'], 4), od.get('line'), round(od.get('pover') or 0, 4)]
+            if (market.get(e['id']) or {}).get('k') == k:
+                continue
+            lh, la = fcst.market_lambdas(od)
+            market[e['id']] = {'lh': round(lh, 3), 'la': round(la, 3), 'd': e['date'], 'h': e['home']['id'], 'a': e['away']['id'],
+                               'c': key, 'k': k, 'at': iso(NOW)}
+    valid = {e['id'] for evs in events.values() for e in evs}
+    market = {k: v for k, v in market.items() if k in valid}
+    ts = lambda x: (parse_dt(x) or NOW).timestamp()  # noqa: E731
+    now_ts = NOW.timestamp()
+    prev_bl, prev_cl = uncompact(store['prev'].get('bl') or []), uncompact(store['prev'].get('cl') or [])
+    obs = fcst.obs_from(events['bl'] + events['cl'], now_ts, 1.0, ts) + fcst.obs_from(prev_bl + prev_cl, now_ts, fcst.W_PREV, ts)
+    for mk in market.values():
+        if mk['c'] in ('bl', 'cl'):
+            obs.append((mk['h'], mk['a'], mk['lh'], mk['la'], fcst.W_MARKET * fcst.decay((now_ts - ts(mk['d'])) / 86400.0), False))
+    seen_bl = {t for e in prev_bl for t in (e['home']['id'], e['away']['id'])}
+    seen_cl = {t for e in prev_cl for t in (e['home']['id'], e['away']['id'])}
+    prior = {}
+    for e in events['bl']:
+        for t in (e['home']['id'], e['away']['id']):
+            if t not in seen_bl:
+                prior[t] = (-0.15, -0.15)  # Aufsteiger
+    for e in events['cl']:
+        for t in (e['home']['id'], e['away']['id']):
+            if t not in seen_cl and t not in seen_bl:
+                prior[t] = (-0.1, -0.1)  # neu in der Champions League
+    if len(obs) < 30:
+        raise RuntimeError('zu wenige Spiele für das Modell (%d)' % len(obs))
+    fit = fcst.fit_ratings(obs, prior)
+    model = fcst.Model(fit, default=(-0.35, -0.35))  # unbekannt (z. B. Pokalgegner aus unteren Ligen) = deutlich schwaecher
+    names = {}
+    for evs in events.values():
+        for e in evs:
+            names[e['home']['id']] = e['home']['name']
+            names[e['away']['id']] = e['away']['name']
+    store.update({'market': market, 'updatedAt': iso(NOW), 'params': {'mu': round(fit['mu'], 4), 'h': round(fit['h'], 4), 'obs': len(obs)},
+                  'ratings': {t: [round(fit['att'][t], 3), round(fit['def'][t], 3), names.get(t, t)] for t in fit['att']}})
+    save('model.json', store)
+    fc = {'model': model, 'market': market, 'events': events, 'byId': {e['id']: e for evs in events.values() for e in evs}}
+    state['fc'] = fc
+    return fc
+
+
+def bvb_tie(cl_events, cl):
+    """Aktuelles K.-o.-Duell des BVB: Gegner, Hin- und Rueckspiel, Chance aufs Weiterkommen."""
+    me = next((t for t in cl['teams'] if t.get('isBVB')), None)
+    for r in reversed(fcst.CL_ROUNDS):
+        legs = sorted([e for e in cl_events if e['slug'] == r and ESPN_BVB in (e['home']['id'], e['away']['id'])],
+                      key=lambda e: (e.get('leg') or 0, e['date'] or ''))
+        if not legs:
+            continue
+        opp = legs[0]['away'] if legs[0]['home']['id'] == ESPN_BVB else legs[0]['home']
+        return {'round': r, 'label': ROUND_DE[r], 'opp': {'name': cl_de(opp['name']), 'logo': opp.get('logo')},
+                'legs': [{'date': e['date'], 'home': e['home']['id'] == ESPN_BVB, 'leg': e.get('leg'),
+                          'score': ('%d:%d' % ((e['hs'], e['as']) if e['home']['id'] == ESPN_BVB else (e['as'], e['hs']))) if e['done'] else None}
+                         for e in legs],
+                'p': me.get(NEXT_KEY[r]) if me else None}
+    return None
+
+
+def build_forecasts(state):
+    """Bundesliga- und CL-Prognose (15.000 Simulationen) + Zeiten, zu denen Spiele enden (fuer die Laeufe nach jedem Spiel)."""
+    fc = build_model(state)
+    model, market, ev = fc['model'], fc['market'], fc['events']
+    tables = load('tables.json', {}) or {}
+    out = {}
+    bl = fcst.bl_forecast(ev['bl'], model, market, sims=15000)
+    if bl:
+        rows = (tables.get('bl1') or {}).get('rows') or []
+        for t in bl['teams']:
+            r = best_row(rows, ESPN_ALIAS.get(t['name'], t['name']))
+            t['team'] = r['team'] if r else t['name']
+            t['short'] = (r.get('short') if r else None) or t['team']
+            t['icon'] = (r.get('icon') if r else None) or t.get('logo')
+            t['id'] = r['id'] if r else 'espn-' + t['espnId']
+            t['isBVB'] = t['espnId'] == ESPN_BVB
+        out['bl'] = bl
+    ucl = (tables.get('ucl') or {}).get('rows') or []
+    order = [str(r['id']).replace('espn-', '') for r in sorted(ucl, key=lambda r: r['pos'])] if ucl else None
+    cl = fcst.cl_forecast(ev['cl'], model, market, official_order=order, sims=15000)
+    if cl:
+        cur = {str(r['id']).replace('espn-', ''): r['pos'] for r in ucl}
+        for t in cl['teams']:
+            t['team'] = cl_de(t['name'])
+            t['icon'] = t.get('logo')
+            t['pos'] = cur.get(t['espnId'])
+            t['isBVB'] = t['espnId'] == ESPN_BVB
+        cl['tie'] = bvb_tie(ev['cl'], cl)
+        out['cl'] = cl
+    ends = set()
+    for key in ('bl', 'cl'):
+        for e in ev[key]:
+            ko = parse_dt(e['date'])
+            if ko and not e['done'] and NOW - timedelta(hours=4) < ko < NOW + timedelta(days=14):
+                ends.add(iso(ko + timedelta(minutes=115)))
+    out['ends'] = sorted(ends)[:150]
+    out['info'] = {'odds': len(market), 'oddsOpen': sum(1 for e in fc['byId'].values() if not e['done'] and e['id'] in market),
+                   'home': round(model.h, 3), 'teams': len(model.att), 'sims': 15000}
+    return out
+
+
 def mod_season(state):
     """Fieberkurve (mit Vorsaison), Saison-Prognose, Liga-Torjaeger und Basis-Tabelle fuer die Live-Konferenz."""
     cur = oldb('/getmatchdata/bl1/%d' % SEASON)
@@ -1132,10 +1314,21 @@ def mod_season(state):
         out['fever']['prev'] = fever_curve(oldb('/getmatchdata/bl1/%d' % (SEASON - 1)))
     except Exception as e:
         errors.append('Vorsaison: %s' % e)
+    # Prognose: Spielstaerken aus Ergebnissen + Wettquoten (forecast.py); faellt ESPN aus, rechnet das einfache Modell
     try:
-        out['forecast'] = season_forecast(cur)
+        fx = build_forecasts(state)
+        out['forecast'] = fx.get('bl') or season_forecast(cur)
+        if fx.get('cl'):
+            out['cl'] = fx['cl']
+        out['nextEnds'] = fx['ends']
+        out['model'] = fx['info']
     except Exception as e:
-        errors.append('Prognose: %s' % e)
+        traceback.print_exc()
+        errors.append('Prognose-Modell: %s' % e)
+        try:
+            out['forecast'] = season_forecast(cur)
+        except Exception as e2:
+            errors.append('Prognose: %s' % e2)
     try:
         teams = scorer_teams(cur)
         sc = []
@@ -1356,10 +1549,27 @@ def form_line(form):
     return ', '.join('%s %s %s' % ({'W': 'S', 'D': 'U', 'L': 'N'}[f['r']], f['score'], f.get('opp') or '') for f in form) or 'k. A.'
 
 
+def model_tip(state, e):
+    """KI-Tipp aus dem Prognose-Modell: das Ergebnis mit den meisten erwarteten Tipp-Punkten (aus Wettquoten, sonst aus Spielstaerken)."""
+    fc = state.get('fc')
+    ev = fc['byId'].get(str((e.get('espn') or {}).get('id'))) if fc else None
+    if not ev:
+        return None
+    mk = fc['market'].get(ev['id'])
+    lh, la = (mk['lh'], mk['la']) if mk else fc['model'].lam(ev['home']['id'], ev['away']['id'], ev.get('neutral'))
+    t = fcst.best_tip(lh, la)
+    home = ev['home']['id'] == ESPN_BVB
+    w, l = (t['pw'], t['pl']) if home else (t['pl'], t['pw'])
+    return {'tip': {'bvb': t['home'], 'opp': t['away']} if home else {'bvb': t['away'], 'opp': t['home']},
+            'probs': {'w': round(w * 100, 1), 'd': round(t['pd'] * 100, 1), 'l': round(l * 100, 1)},
+            'goals': [round(lh if home else la, 2), round(la if home else lh, 2)], 'exp': t['exp'],
+            'src': 'quoten' if mk else 'modell', 'at': iso(NOW)}
+
+
 def mc_gemini(state, prompt):
     key = os.environ.get('GEMINI_API_KEY', '').strip()
     if not ai_available():
-        raise RuntimeError('Kein GEMINI_API_KEY gesetzt')
+        raise RuntimeError('Kein KI-Schlüssel gesetzt (GEMINI_API_KEY oder eine Ersatz-KI)')
     models = state.get('gemini_models') or (gemini_models(key) if key else [])
     state['gemini_models'] = models
     data, model, _ = gemini_call(key, models, prompt, False, state.setdefault('mc_attempts', []))
@@ -1369,25 +1579,31 @@ def mc_gemini(state, prompt):
 def make_preview(state, m, entry, squads, news):
     opp = m['away'] if m['isHome'] else m['home']
     o = entry.get('opponent') or {}
+    mt = entry.get('model')
     heads = gnews('BVB %s' % match_word(opp), days=4)[:25]
     ko = parse_dt(m['date'])
+    model_line = ('PROGNOSE-MODELL (aus %s): Sieg BVB %s %%, Remis %s %%, Niederlage %s %%, KI-Tipp %d:%d (BVB:Gegner).\n' % (
+        'Wettquoten' if mt['src'] == 'quoten' else 'Spielstärken', mt['probs']['w'], mt['probs']['d'], mt['probs']['l'],
+        mt['tip']['bvb'], mt['tip']['opp'])) if mt else ''
     prompt = (
         'Du schreibst den Vorbericht für eine Borussia-Dortmund-Fan-App. Heute ist %s.\n'
         'SPIEL: %s – %s, %s%s, Anstoß %s Uhr (deutsche Zeit), BVB spielt %s.\n'
         'BVB-FORM: %s\nGEGNER-FORM: %s\nTABELLE: BVB %s, Gegner %s\nDIREKTER VERGLEICH (aus BVB-Sicht): %s\n'
-        'BVB-AUSFÄLLE: %s\n\nSCHLAGZEILEN ZUM SPIEL (neueste zuerst):\n%s\n\n'
+        'BVB-AUSFÄLLE: %s\n%s\nSCHLAGZEILEN ZUM SPIEL (neueste zuerst):\n%s\n\n'
         'AUFGABE: Antworte NUR mit JSON: {"text":"4-5 sachliche Sätze auf Deutsch","keyPoints":["kurzer Fakt","kurzer Fakt",'
         '"kurzer Fakt"],"tip":{"bvb":2,"opp":1},"tipReason":"ein kurzer Satz"}\n'
         'Regeln: Nur Fakten aus den Angaben oben, nichts erfinden, keine Aufstellung erfinden. '
-        'Was du nicht sicher weißt, lässt du weg. tip = deine realistische Ergebnis-Prognose (Tore BVB, Tore Gegner).'
+        'Was du nicht sicher weißt, lässt du weg. %s'
         % (TODAY, m['home']['name'], m['away']['name'], m.get('comp') or '', (' · ' + m['round']) if m.get('round') else '',
            to_berlin(ko).strftime('%d.%m. %H:%M') if ko else 'k. A.', 'zu Hause' if m['isHome'] else 'auswärts',
            form_line(o.get('bvbForm') or []), form_line(o.get('form') or []),
            ('Platz %s (%s Pkt.)' % (o['bvbTable']['pos'], o['bvbTable']['points'])) if o.get('bvbTable') else 'k. A.',
            ('Platz %s (%s Pkt.)' % (o['table']['pos'], o['table']['points'])) if o.get('table') else 'k. A.',
            ('%d Siege, %d Remis, %d Niederlagen' % (o['h2h']['w'], o['h2h']['d'], o['h2h']['l'])) if o.get('h2h') else 'k. A.',
-           '; '.join(absences_text(squads, news)) or 'keine bekannt',
-           '\n'.join('- %s | %s | %s' % (h['date'][:10], h['outlet'], h['title']) for h in heads) or 'keine'))
+           '; '.join(absences_text(squads, news)) or 'keine bekannt', model_line,
+           '\n'.join('- %s | %s | %s' % (h['date'][:10], h['outlet'], h['title']) for h in heads) or 'keine',
+           'tip = genau der KI-Tipp des Prognose-Modells oben; tipReason begründet ihn kurz mit den Zahlen.' if mt else
+           'tip = deine realistische Ergebnis-Prognose (Tore BVB, Tore Gegner).'))
     data, model = mc_gemini(state, prompt)
     text = (data.get('text') or '').strip()
     if not text:
@@ -1399,6 +1615,8 @@ def make_preview(state, m, entry, squads, news):
             tip = None
     except (TypeError, ValueError, AttributeError):
         tip = None
+    if mt:
+        tip = dict(mt['tip'])  # der Tipp kommt immer aus dem Modell - die KI schreibt nur den Text
     return {'text': text[:1200], 'keyPoints': [str(k).strip()[:140] for k in (data.get('keyPoints') or []) if str(k).strip()][:4],
             'tip': tip, 'tipReason': (data.get('tipReason') or '').strip()[:200] or None, 'at': iso(NOW), 'model': model}
 
@@ -1552,7 +1770,7 @@ def mod_matchcenter(state):
     """Spieltag-Zentrale: ESPN-Zuordnung, Gegner-Check, Spielerwerte je Spiel, KI-Vorbericht, KI-Spielbericht, Monatsfazit."""
     prev = load('matchcenter.json', {}) or {}
     mc = prev.get('matches') or {}
-    months = prev.get('months') or {}
+    months = {k: v for k, v in (prev.get('months') or {}).items() if k >= '%d-07' % SEASON}  # neue Saison: Monats-Rueckblicke neu
     ms = (load('matches.json', {}) or {}).get('profis') or []
     squads = load('squads.json', {}) or {}
     news = load('news.json', {}) or {}
@@ -1625,6 +1843,10 @@ def mod_matchcenter(state):
                     errors.append('ESPN-Vorschau: %s' % ex)
             o['at'] = iso(NOW)
             e['opponent'] = o
+            # KI-Tipp aus dem Modell - bis zum Anpfiff bei jedem Lauf neu (neue Quoten, neue Ergebnisse), danach eingefroren
+            mt = model_tip(state, e)
+            if mt:
+                e['model'] = mt
         # Wetter zum Anpfiff (bis 10 Tage vorher)
         if not m.get('finished') and NOW < ko < NOW + timedelta(days=10):
             try:
@@ -1796,62 +2018,96 @@ def gemini_models(key):
     return order[:6]
 
 
-GROQ = 'https://api.groq.com/openai/v1'
-GROQ_PREFS = ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile', 'qwen/qwen3-32b', 'openai/gpt-oss-20b', 'llama-3.1-8b-instant']
+# Ersatz-KIs - alle kostenlos und OpenAI-kompatibel. Antwortet Gemini nicht, versucht die App sie der Reihe nach.
+# (Name, GitHub-Secret, Adresse, bevorzugte Modelle (Teil des Namens), maximale Prompt-Laenge)
+AI_BACKUPS = [
+    ('groq', 'GROQ_API_KEY', 'https://api.groq.com/openai/v1',
+     ['gpt-oss-120b', 'llama-3.3-70b', 'qwen3-32b', 'gpt-oss-20b', 'llama-3.1-8b'], 13000),
+    ('cerebras', 'CEREBRAS_API_KEY', 'https://api.cerebras.ai/v1',
+     ['gpt-oss-120b', 'qwen-3-235b', 'llama-3.3-70b', 'qwen-3-32b', 'llama3.1-8b'], 30000),
+    ('openrouter', 'OPENROUTER_API_KEY', 'https://openrouter.ai/api/v1',
+     ['gpt-oss-120b', 'deepseek-chat', 'deepseek-v3', 'llama-3.3-70b', 'qwen3-235b', 'mistral-small', 'gemma-3-27b', ':free'], 30000),
+    ('mistral', 'MISTRAL_API_KEY', 'https://api.mistral.ai/v1',
+     ['mistral-medium-latest', 'mistral-small-latest', 'mistral-large-latest', 'open-mistral-nemo'], 30000),
+]
 
 
-def groq_models(key):
-    """Verfuegbare Groq-Modelle: bevorzugte zuerst (so laeuft es weiter, wenn Groq Modelle austauscht)."""
+def backup_models(name, base, key, prefs):
+    """Verfuegbare Modelle eines Anbieters, bevorzugte zuerst (laeuft weiter, wenn Anbieter Modelle austauschen)."""
     ids = []
     try:
-        data = http_json(GROQ + '/models', headers={'Authorization': 'Bearer ' + key}, timeout=30)
+        data = http_json(base + '/models', headers={'Authorization': 'Bearer ' + key}, timeout=30)
         ids = [m.get('id') for m in data.get('data') or [] if m.get('id') and m.get('active', True)]
     except Exception as e:
-        log('  Groq Modellliste: %s' % e)
-    ids = [i for i in ids if not re.search(r'whisper|tts|guard|vision|embed|audio|playai|compound|safeguard', i, re.I)]
-    return ([m for m in GROQ_PREFS if m in ids] or ids[:3] or GROQ_PREFS[:2])[:3]
+        log('  %s Modellliste: %s' % (name, e))
+    ids = [i for i in ids if not re.search(r'whisper|tts|guard|vision|embed|audio|playai|compound|safeguard|image|ocr|moderation|'
+                                           r'codestral|pixtral|voxtral|devstral|transcribe', i, re.I)]
+    if name == 'openrouter':
+        ids = [i for i in ids if i.endswith(':free')]
+    out = []
+    for pref in prefs:
+        for i in ids:
+            if pref in i and i not in out:
+                out.append(i)
+    return (out or ids or [p for p in prefs if ':' not in p][:1])[:3]
 
 
-def groq_call(prompt, attempts=None):
-    """Ersatz-KI, wenn Gemini nicht antwortet (kostenloser Groq-Schluessel als GitHub-Secret GROQ_API_KEY)."""
-    key = os.environ.get('GROQ_API_KEY', '').strip()
-    if not key:
-        raise RuntimeError('kein GROQ_API_KEY')
-    # Gratis-Kontingent (ca. 8.000 Tokens pro Minute): lange Prompts hinten kuerzen - dort stehen die aeltesten Schlagzeilen
-    if len(prompt) > 13000:
-        prompt = prompt[:13000].rsplit('\n', 1)[0]
+def backup_call(prompt, attempts=None):
+    """Ersatz-KIs der Reihe nach, bis eine gueltiges JSON liefert."""
     last = None
-    for model in groq_models(key):
-        body = {'model': model, 'temperature': 0.2, 'max_tokens': 3500, 'response_format': {'type': 'json_object'},
-                'messages': [{'role': 'system', 'content': 'Du antwortest ausschließlich mit gültigem JSON.'},
-                             {'role': 'user', 'content': prompt}]}
-        try:
-            res = http_json(GROQ + '/chat/completions', body=body, headers={'Authorization': 'Bearer ' + key}, timeout=120)
-            txt = ((res.get('choices') or [{}])[0].get('message') or {}).get('content') or ''
-            data = extract_json(txt)
-            if data is None:
-                raise RuntimeError('Antwort war kein JSON')
-            return data, 'groq:' + model, []
-        except urllib.error.HTTPError as e:
-            detail = ''
-            try:
-                detail = json.loads(e.read().decode('utf-8')).get('error', {}).get('message', '')[:160]
-            except Exception:
-                pass
-            last = 'groq:%s: HTTP %s %s' % (model, e.code, detail)
-        except Exception as e:
-            last = 'groq:%s: %s' % (model, e)
-        if attempts is not None:
-            attempts.append(str(last)[:200])
-    raise RuntimeError(last or 'Groq nicht verfügbar')
+    for name, env, base, prefs, limit in AI_BACKUPS:
+        key = os.environ.get(env, '').strip()
+        if not key:
+            continue
+        # Gratis-Kontingente sind begrenzt: lange Prompts hinten kuerzen - dort stehen die aeltesten Schlagzeilen
+        pr = prompt if len(prompt) <= limit else prompt[:limit].rsplit('\n', 1)[0]
+        headers = {'Authorization': 'Bearer ' + key}
+        if name == 'openrouter':
+            headers.update({'HTTP-Referer': 'https://github.com/sneaxx141108-gif/bvb09', 'X-Title': 'BVB 09 Fan-App'})
+        for model in backup_models(name, base, key, prefs):
+            for json_mode in (True, False):
+                body = {'model': model, 'temperature': 0.2, 'max_tokens': 4000,
+                        'messages': [{'role': 'system', 'content': 'Du antwortest ausschließlich mit gültigem JSON.'},
+                                     {'role': 'user', 'content': pr}]}
+                if json_mode:
+                    body['response_format'] = {'type': 'json_object'}
+                try:
+                    res = http_json(base + '/chat/completions', body=body, headers=headers, timeout=150)
+                    txt = ((res.get('choices') or [{}])[0].get('message') or {}).get('content') or ''
+                    data = extract_json(txt)
+                    if data is None:
+                        raise RuntimeError('Antwort war kein JSON')
+                    return data, '%s:%s' % (name, model), []
+                except urllib.error.HTTPError as e:
+                    detail = ''
+                    try:
+                        detail = json.loads(e.read().decode('utf-8')).get('error', {}).get('message', '')[:160]
+                    except Exception:
+                        pass
+                    last = '%s:%s: HTTP %s %s' % (name, model, e.code, detail)
+                    if attempts is not None:
+                        attempts.append(last[:200])
+                    if e.code == 400 and json_mode:
+                        continue  # Modell kann keinen JSON-Modus -> einmal ohne
+                    break
+                except Exception as e:
+                    last = '%s:%s: %s' % (name, model, e)
+                    if attempts is not None:
+                        attempts.append(str(last)[:200])
+                    break
+    raise RuntimeError(last or 'keine Ersatz-KI eingerichtet')
+
+
+def backups_set():
+    return [name for name, env, _, _, _ in AI_BACKUPS if os.environ.get(env, '').strip()]
 
 
 def ai_available():
-    return bool(os.environ.get('GEMINI_API_KEY', '').strip() or os.environ.get('GROQ_API_KEY', '').strip())
+    return bool(os.environ.get('GEMINI_API_KEY', '').strip() or backups_set())
 
 
 def gemini_call(key, models, prompt, grounded, attempts=None):
-    """Gemini zuerst; antwortet kein Gemini-Modell, springt (ohne Google-Suche) die Ersatz-KI Groq ein."""
+    """Gemini zuerst; antwortet kein Gemini-Modell, springen (ohne Google-Suche) die Ersatz-KIs ein."""
     last = None
     for model in (models if key else []):
         body = {'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],
@@ -1894,9 +2150,9 @@ def gemini_call(key, models, prompt, grounded, attempts=None):
                 if attempts is not None:
                     attempts.append(str(last)[:200])
                 break
-    if not grounded and os.environ.get('GROQ_API_KEY', '').strip():
+    if not grounded and backups_set():
         try:
-            return groq_call(prompt, attempts)
+            return backup_call(prompt, attempts)
         except Exception as e:
             last = ('%s | %s' % (last, e)) if last else str(e)
     raise RuntimeError(last or 'kein Modell verfügbar')
@@ -1932,7 +2188,8 @@ def build_prompt(headlines, squads, stories, grounded):
              for s in stories[:40]]
     lines = ['%d | %s | %s | %s' % (i, h['date'][:10], h['outlet'], h['title']) for i, h in enumerate(headlines[:120])]
     task = (
-        'Du bist der Transfer-Redakteur einer Borussia-Dortmund-Fan-App. Heute ist %s.\n\n'
+        'Du bist der Transfer-Redakteur einer Borussia-Dortmund-Fan-App. Heute ist %s. Laufende Saison: %s '
+        '(Sommer-Transferfenster %s und Winter-Transferfenster %s). Wechsel aus früheren Saisons gehören nicht mehr dazu.\n\n'
         'AUFGABE: Finde alle aktuellen Transfer-Storys rund um Borussia Dortmund (Profis, BVB II, U19, '
         'auch Trainer/Sportdirektor) aus den letzten 14 Tagen: Zugänge, Abgänge, Leihen, '
         'Vertragsverlängerungen, Dementis.\n\n'
@@ -1943,7 +2200,8 @@ def build_prompt(headlines, squads, stories, grounded):
         'Viele Schlagzeilen kommen von Sammelseiten (z. B. 90min, Tribuna, FussballTransfers, Yahoo). '
         'Übernimm sie nur, wenn klar ist, dass sie eine Quelle der Liste zitieren, und gib dann die '
         'Originalquelle an. Alles andere (Boulevard ohne Quelle, Fan-Accounts, Spekulation) weglassen.\n\n'
-        % (TODAY, ', '.join(TIER1), ', '.join(TIER2)))
+        % (TODAY, '%d/%02d' % (TRANSFER_SEASON, (TRANSFER_SEASON + 1) % 100), TRANSFER_SEASON, TRANSFER_SEASON + 1,
+           ', '.join(TIER1), ', '.join(TIER2)))
     if grounded:
         task += ('Nutze die Google-Suche, um die neuesten Meldungen zu prüfen, besonders Posts auf X von '
                  'Fabrizio Romano (@FabrizioRomano), Florian Plettenberg (@Plettigoal), Patrick Berger '
@@ -1952,7 +2210,8 @@ def build_prompt(headlines, squads, stories, grounded):
         'STATUS-Werte: "official" (vom Verein bestätigt), "herewego" (Romanos "Here we go" oder Einigung aller '
         'Parteien laut Stufe-1-Quelle), "advanced" (fortgeschrittene Verhandlungen), "talks" (Gespräche/Angebot), '
         '"interest" (Interesse/Kandidat), "denied" (dementiert/geplatzt), "extension" (Vertragsverlängerung).\n'
-        'direction: "in" = kommt zum BVB, "out" = verlässt den BVB, "extension" = verlängert beim BVB.\n'
+        'direction: "in" = kommt zum BVB, "out" = verlässt den BVB, "extension" = verlängert beim BVB. '
+        'team: "profis" (erste Mannschaft), "u23" (BVB II) oder "u19".\n'
         'Erfinde NIEMALS Zahlen oder Fakten. Ablöse, Boni, Vertragsende, Verein, Position und Datum nur, wenn eine Quelle '
         'sie klar nennt - bist du dir nicht sicher, gib null zurück (die App zeigt dann k. A.). Lieber null als raten.\n'
         'probability = deine Einschätzung der Wechselwahrscheinlichkeit in Prozent (0-100) für Gerüchte '
@@ -1971,7 +2230,7 @@ def build_prompt(headlines, squads, stories, grounded):
         '3) "mood": Stimmung rund um den BVB laut den Schlagzeilen (Fans und Medien): score 0-100 (0 = Krise, '
         '50 = normal, 100 = Euphorie), label = 1-2 Wörter auf Deutsch, reason = ein kurzer Satz.\n\n'
         'Antworte NUR mit JSON in genau diesem Format:\n'
-        '{"stories":[{"key":"spieler-name|in","player":"Vorname Nachname","role":"Spieler|Trainer|Funktionär",'
+        '{"stories":[{"key":"spieler-name|in","player":"Vorname Nachname","role":"Spieler|Trainer|Funktionär","team":"profis|u23|u19",'
         '"direction":"in|out|extension","otherClub":"Vereinsname oder null",'
         '"otherClubEn":"englischer Vereinsname (für die Logo-Suche) oder null","status":"...",'
         '"fee":"z.B. 30 Mio. € oder null","feeValue":30000000,"bonus":"z.B. 5 Mio. € Boni oder null",'
@@ -2011,7 +2270,7 @@ def mod_news(state):
     key = os.environ.get('GEMINI_API_KEY', '').strip()
     result = None
     if not ai_available():
-        gem['error'] = 'Kein GEMINI_API_KEY gesetzt'
+        gem['error'] = 'Kein KI-Schlüssel gesetzt (GEMINI_API_KEY oder eine Ersatz-KI)'
     else:
         models = gemini_models(key) if key else []
         state['gemini_models'] = models
@@ -2075,6 +2334,15 @@ def mod_news(state):
     ilimit = (NOW - timedelta(days=21)).strftime('%Y-%m-%d')
     injury_news = [i for i in injury_news if (i.get('date') or TODAY) >= ilimit][:40]
     enrich_stories(stories, state)
+    # Bilanz der laufenden Saison und Ausfaelle im Kader - laeuft auch ohne KI-Antwort (Saisonwechsel, Aufraeumen)
+    try:
+        gem['transfersAdded'] = sync_transfers(stories, state)
+    except Exception as e:
+        log('  Transferbilanz: %s' % e)
+    try:
+        gem['injuriesApplied'] = apply_injuries(injury_news, state)
+    except Exception as e:
+        log('  Ausfälle im Kader: %s' % e)
     save('news.json', {'updatedAt': iso(NOW), 'stories': stories, 'headlines': shown[:60],
                        'injuryNews': injury_news, 'briefing': briefing, 'gemini': gem,
                        'mood': mood, 'moodHistory': mood_hist[-90:]})
@@ -2109,8 +2377,11 @@ def merge_stories(stories, found, headlines, state):
         s = by_key.get(key) or by_key.get(f.get('key') or '')
         club = (f.get('otherClub') or '').strip() or None
         club_en = (f.get('otherClubEn') or '').strip() or None
+        team = f.get('team') if f.get('team') in ('profis', 'u23', 'u19') else None
+        if s and team and not s.get('team'):
+            s['team'] = team
         if not s:
-            s = {'key': key, 'player': player, 'role': f.get('role') or 'Spieler', 'direction': direction,
+            s = {'key': key, 'player': player, 'role': f.get('role') or 'Spieler', 'team': team, 'direction': direction,
                  'otherClub': {'name': club, 'en': club_en} if club else None, 'status': status, 'fee': f.get('fee'),
                  'feeValue': f.get('feeValue') if isinstance(f.get('feeValue'), (int, float)) else None,
                  'bonus': f.get('bonus'), 'contractUntil': f.get('contractUntil'), 'loan': bool(f.get('loan')),
@@ -2220,8 +2491,8 @@ def apply_ai_updates(stories, state):
             changed += 1
             state['changes'].add('squad', 'Vertrag verlängert: %s bis %s (laut %s)' % (s['player'], y.group(1), s.get('source')))
     # Offizielle Wechsel (nur Stufe-1-Quelle) direkt im Kader nachziehen: Neuzugaenge rein, Abgaenge raus
-    pro = (squads.get('teams') or {}).get('profis')
     for s in stories:
+        pro = (squads.get('teams') or {}).get(s.get('team') or 'profis') or (squads.get('teams') or {}).get('profis')
         if not pro or s.get('status') != 'official' or s.get('tier') != 1 or (s.get('role') or 'Spieler') != 'Spieler':
             continue
         hits = find(s['player'])
@@ -2256,6 +2527,111 @@ def apply_ai_updates(stories, state):
     if changed:
         squads['aiUpdatedAt'] = iso(NOW)
         save('squads.json', squads)
+    return changed
+
+
+def sync_transfers(stories, state):
+    """Transferbilanz der laufenden Saison: neue Saison -> bei null starten; offizielle Wechsel aus den News dauerhaft eintragen."""
+    tr = load('transfers.json', {}) or {}
+    lab = '%02d/%02d' % (TRANSFER_SEASON % 100, (TRANSFER_SEASON + 1) % 100)
+    reset = tr.get('season') != TRANSFER_SEASON
+    if reset:
+        if tr.get('season'):
+            state['changes'].add('transfers', 'Neue Transfersaison %s – die Bilanz startet bei null' % lab)
+        tr = {'season': TRANSFER_SEASON, 'seasonLabel': lab, 'in': [], 'out': [], 'income': 0, 'expense': 0, 'balance': 0,
+              'resetAt': iso(NOW)}
+    start = '%d-06-01' % TRANSFER_SEASON
+    known = {slug(x['name']) for k in ('in', 'out') for x in tr.get(k) or []}
+    added = 0
+    for s in stories:
+        if s.get('status') != 'official' or s.get('direction') not in ('in', 'out') or (s.get('role') or 'Spieler') != 'Spieler':
+            continue
+        if (s.get('date') or TODAY) < start or slug(s['player']) in known:
+            continue
+        info = s.get('playerInfo') or {}
+        club = s.get('otherClub') or {}
+        tr[s['direction']].insert(0, {'id': info.get('id') or 'ai-' + slug(s['player']), 'name': s['player'], 'img': info.get('img'),
+                                      'position': info.get('position'), 'age': info.get('age'),
+                                      'club': {'name': club.get('name'), 'crest': club.get('crest')} if club.get('name') else None,
+                                      'fee': s.get('fee') or 'k. A.', 'feeValue': s.get('feeValue'), 'loan': bool(s.get('loan')),
+                                      'news': s.get('source'), 'date': s.get('date') or TODAY})
+        known.add(slug(s['player']))
+        added += 1
+        state['changes'].add('transfers', '%s für die Bilanz: %s (%s)' % ('Zugang' if s['direction'] == 'in' else 'Abgang', s['player'],
+                                                                       club.get('name') or 'k. A.'))
+    if added or reset:
+        tr['income'] = sum(x.get('feeValue') or 0 for x in tr['out'])
+        tr['expense'] = sum(x.get('feeValue') or 0 for x in tr['in'])
+        tr['balance'] = tr['income'] - tr['expense']
+        tr['updatedAt'] = iso(NOW)
+        save('transfers.json', tr)
+    return added
+
+
+def apply_injuries(injury_news, state):
+    """Verletzungs-News in den Kader uebernehmen: Ausfaelle eintragen, Genesene austragen, Veraltetes aufraeumen."""
+    squads = load('squads.json')
+    if not squads:
+        return 0
+    index = {}
+    for team in (squads.get('teams') or {}).values():
+        for pl in team.get('players', []):
+            index.setdefault(slug(pl['name']), []).append(pl)
+
+    def find(name):
+        sl = slug(name)
+        if sl in index:
+            return index[sl]
+        last = sl.split('-')[-1] if sl else ''
+        hits = [pl for k, ps in index.items() for pl in ps if last and k.split('-')[-1] == last]
+        return hits if len({pl['id'] for pl in hits}) == 1 else []
+    changed = 0
+    for n in sorted(injury_news, key=lambda i: i.get('date') or ''):
+        st = n.get('status')
+        for pl in find(n.get('player') or ''):
+            ab = pl.setdefault('absences', [])
+            if st in ('injured', 'suspended'):
+                typ = 'injury' if st == 'injured' else 'suspension'
+                txt = ((n.get('text') or INJ_LABEL[st]) + (' · Rückkehr: %s' % n['expectedReturn'] if n.get('expectedReturn') else ''))[:200]
+                cur = next((a for a in ab if a.get('type') == typ), None)
+                if cur and cur.get('ai') and cur.get('text') == txt:
+                    continue
+                if cur and (cur.get('since') or '') > (n.get('date') or ''):
+                    continue
+                ab[:] = [a for a in ab if a.get('type') != typ]
+                ab.append({'type': typ, 'text': txt, 'ai': True, 'since': n.get('date') or TODAY, 'source': n.get('source')})
+                changed += 1
+            elif st in ('fit', 'back'):
+                keep = [a for a in ab if a.get('type') != 'injury' or (a.get('since') or '') > (n.get('date') or '')]
+                if len(keep) != len(ab):
+                    ab[:] = keep
+                    changed += 1
+    # Wer im letzten Spiel auf dem Platz stand, ist weder verletzt noch gesperrt (alte Eintraege raus)
+    fin = [m for m in (load('matches.json', {}) or {}).get('profis') or [] if m.get('finished')]
+    if fin:
+        last = fin[-1]
+        game = (((load('matchcenter.json', {}) or {}).get('matches') or {}).get(last['id']) or {}).get('game') or {}
+        played = {pid for pid, v in (game.get('players') or {}).items() if (v.get('min') or 0) > 0}
+        day = (last.get('date') or '')[:10]
+        for pl in ((squads.get('teams') or {}).get('profis') or {}).get('players') or []:
+            if pl['id'] in played and pl.get('absences'):
+                keep = [a for a in pl['absences'] if a.get('type') not in ('injury', 'suspension', 'out') or (a.get('since') or '0000') > day]
+                if len(keep) != len(pl['absences']):
+                    pl['absences'] = keep
+                    changed += 1
+    # KI-Eintraege ohne neue Meldung nach 60 Tagen entfernen
+    lim = (NOW - timedelta(days=60)).strftime('%Y-%m-%d')
+    for team in (squads.get('teams') or {}).values():
+        for pl in team.get('players', []):
+            ab = pl.get('absences') or []
+            keep = [a for a in ab if not (a.get('ai') and (a.get('since') or TODAY) < lim)]
+            if len(keep) != len(ab):
+                pl['absences'] = keep
+                changed += 1
+    if changed:
+        squads['aiUpdatedAt'] = iso(NOW)
+        save('squads.json', squads)
+        state['changes'].add('injuries', 'Ausfälle im Kader aktualisiert (%d)' % changed, count=changed)
     return changed
 
 
@@ -2410,6 +2786,7 @@ def main():
         'totalChanges7d': sum(r['changes'] for r in runs
                               if r['at'] >= iso(NOW - timedelta(days=7))),
         'runner': 'github-actions' if os.environ.get('GITHUB_ACTIONS') else 'lokal',
+        'ai': dict([('gemini', bool(os.environ.get('GEMINI_API_KEY', '').strip()))] + [(n, n in backups_set()) for n, *_ in AI_BACKUPS]),
         'kind': kind,
         'debug': DEBUG[:8],
     }

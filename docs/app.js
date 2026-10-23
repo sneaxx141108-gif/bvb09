@@ -20,7 +20,7 @@
     set(k, v) { try { localStorage.setItem('bvb09.' + k, JSON.stringify(v)); } catch (e) { /* privat */ } },
   };
   const UI = Object.assign({ kaderTeam: 'profis', spieleTeam: 'profis', vertTeam: 'profis',
-    statsTeam: 'profis', statsComp: 'all', newsFilter: 'alle', kaderFilter: 'alle' }, store.get('ui', {}));
+    statsTeam: 'profis', statsComp: 'all', scorerTab: 'goals', newsFilter: 'alle', kaderFilter: 'alle' }, store.get('ui', {}));
   UI.kaderSearch = '';
   const saveUI = () => { const c = Object.assign({}, UI); delete c.kaderSearch; store.set('ui', c); };
 
@@ -725,7 +725,7 @@
         ${live ? `<span class="mh-score">${m.score ? m.score[0] + ':' + m.score[1] : '0:0'}</span>` : '<span class="mh-vs">VS</span>'}
         <span class="mh-team">${crest(m.away, 'crest')}<span class="mh-name ellipsis">${esc(tname(m.away))}</span></span>
       </span>
-      <span class="mh-meta" style="display:block">${esc(dayLabel(m.date))} · ${m.timeKnown === false ? 'Uhrzeit offen' : esc(F.time.format(new Date(m.date))) + ' Uhr'}${m.location ? ' · ' + esc(m.location) : ''}</span>
+      <span class="mh-meta" style="display:block">${esc(dayLabel(m.date))} · ${m.timeKnown === false ? 'Uhrzeit offen' : esc(F.time.format(new Date(m.date))) + ' Uhr'}${m.location ? ' · ' + esc(m.location) : ''}${!live && (mcOf(m.id).model || {}).probs ? ` · <span class="mh-prob">Siegchance ${nf0.format(mcOf(m.id).model.probs.w)} %</span>` : ''}</span>
       ${live ? (goals ? `<span class="goals" style="display:flex">${goals}</span>` : '<span class="mh-meta" style="display:block;margin-top:10px">Noch keine Tore</span>') : odoHtml(m.date)}
     </button>`;
   }
@@ -947,43 +947,30 @@
     ['u19', 'U19', 'A-Junioren', 'U19', 'https://www.transfermarkt.de/borussia-dortmund-u19/startseite/verein/1464'],
   ];
   function vTM() {
-    const marq = '<span>BORUSSIA DORTMUND · SÜDTRIBÜNE · BVB 09 · </span>';
-    const tickets = TM_PAGES.map(([k, name, sub, wm, url], i) => {
+    const cards = TM_PAGES.map(([k, name, sub, wm, url], i) => {
       const t = team(k);
-      return `<a class="tmp${i === 0 ? ' gold' : ''}" href="${url}" target="_blank" rel="noopener" style="--d:${(i * 1.6).toFixed(1)}s" aria-label="${name} auf Transfermarkt öffnen">
-        <span class="tmp-wm" aria-hidden="true">${wm}</span>
-        <span class="tmp-stub" aria-hidden="true"><img src="${BVB.crest}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"></span>
-        <span class="tmp-txt"><b>${name}</b><span>${esc(sub)}</span>${t.count ? `<span class="tmp-v">${t.count} Spieler</span>` : ''}</span>
-        <span class="tmp-go" aria-hidden="true">${I.ext}</span>
-      </a>`;
+      const meta = [t.count ? `${t.count} Spieler` : '', t.avgAge ? `Ø ${String(t.avgAge).replace('.', ',')} Jahre` : ''].filter(Boolean).join(' · ');
+      return `<a class="tmk t${i}" href="${url}" target="_blank" rel="noopener" aria-label="${name} auf Transfermarkt öffnen">
+        <span class="tmk-big" aria-hidden="true">${wm}</span>
+        <span class="tmk-crest" aria-hidden="true"><img src="${BVB.crest}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"></span>
+        <span class="tmk-txt"><span class="tmk-sub">${esc(sub)}</span><b>${name}</b>${meta ? `<span class="tmk-meta">${esc(meta)}</span>` : ''}</span>
+        <span class="tmk-go" aria-hidden="true">${I.ext}</span></a>`;
     }).join('');
-    return `<section class="tmx" aria-label="Transfermarkt-Seiten">
-      <div class="tmx-bg" aria-hidden="true">
-        <span class="tmx-sky"></span><span class="tmx-beam l"></span><span class="tmx-beam r"></span>
-        <span class="tmx-mast l">${'<i></i>'.repeat(8)}</span><span class="tmx-mast r">${'<i></i>'.repeat(8)}</span>
-        <span class="tmx-marq">${marq}${marq}</span>
-        <span class="tmx-wall"></span>
-        <span class="tmx-sparks">${'<i></i>'.repeat(9)}</span>
-      </div>
-      <header class="tmx-head">
-        <span class="tmx-badge"><img src="${BVB.crest}" alt="" decoding="async" referrerpolicy="no-referrer"></span>
-        <h2>Transfer<em>markt</em></h2>
-        <p>Profis, U23 und U19 – ein Tipp und du bist direkt auf der Seite.</p>
-      </header>
-      <div class="tmp-list stagger">${tickets}</div>
-      <p class="tmx-foot">Öffnet transfermarkt.de</p>
-    </section>`;
+    return `<section class="tmk-head"><span class="eyebrow">Direkt zu transfermarkt.de</span><h2>Kader &amp; <em>Marktwerte</em></h2>
+        <p>Werte, Verträge und Gerüchte von Profis, U23 und U19 – ein Tipp öffnet die Seite.</p></section>
+      <div class="tmk-list stagger">${cards}</div>`;
   }
   function vBilanz() {
     const tr0 = D.transfers || {};
-    if (!tr0.in && !tr0.out) return '<div class="empty" style="margin-top:14px">Noch keine Transferdaten.</div>';
+    if (!tr0.in && !tr0.out) return '<div class="empty" style="margin-top:14px">Noch keine Transferdaten für diese Saison.</div>';
     const ins = [...(tr0.in || [])];
     const outs = [...(tr0.out || [])];
     const known = new Set([...ins, ...outs].map((x) => slug(x.name)));
     let addIn = 0;
     let addOut = 0;
+    const start = tr0.season ? `${tr0.season}-06-01` : '';
     for (const s of (D.news || {}).stories || []) {
-      if (s.status !== 'official' || !['in', 'out'].includes(s.direction) || known.has(slug(s.player))) continue;
+      if (s.status !== 'official' || !['in', 'out'].includes(s.direction) || known.has(slug(s.player)) || (s.date || '') < start) continue;
       const item = { name: s.player, img: (s.playerInfo || {}).img, club: s.otherClub, fee: s.fee || UNK, feeValue: s.feeValue, news: s.source };
       if (s.direction === 'in') { ins.unshift(item); addIn += s.feeValue || 0; } else { outs.unshift(item); addOut += s.feeValue || 0; }
     }
@@ -1009,7 +996,7 @@
     out += `<section class="sec"><div class="sec-h"><h2>Zugänge</h2><span class="note">${ins.length}</span></div><div class="card flat"><div class="list">${ins.map((x) => row(x, 'in')).join('') || '<p class="muted" style="padding:12px 0">Keine</p>'}</div></div></section>`;
     out += `<section class="sec"><div class="sec-h"><h2>Abgänge</h2><span class="note">${outs.length}</span></div><div class="card flat"><div class="list">${outs.map((x) => row(x, 'out')).join('') || '<p class="muted" style="padding:12px 0">Keine</p>'}</div></div></section>`;
     if (loans.length) out += `<section class="sec"><div class="sec-h"><h2>Verliehen</h2></div><div class="card flat"><div class="list">${loans.map((x) => row(x, 'out')).join('')}</div></div></section>`;
-    out += `<p class="faint" style="font-size:11px;margin-top:14px;text-align:center;font-weight:600">Quelle: Transfermarkt${addIn || addOut ? ' + neue offizielle Wechsel aus den News' : ''}</p>`;
+    out += `<p class="faint" style="font-size:11px;margin-top:14px;text-align:center;font-weight:600;line-height:1.5">Saison ${esc(tr0.seasonLabel || '')} · startet jede Saison bei null<br>Quelle: Transfermarkt + offizielle Wechsel aus den News (KI)</p>`;
     return out;
   }
   function vVertraege() {
@@ -1092,27 +1079,28 @@
   function tableView(key) {
     const t = (D.tables || {})[key];
     if (!t || !t.rows || !t.rows.length) return '<div class="empty" style="margin-top:14px">Tabelle noch nicht verfügbar.</div>';
-    const n = t.rows.length;
-    const zone = (p) => (key === 'ucl' ? (p <= 8 ? 'z-cl' : p <= 24 ? 'z-el' : 'z-ab')
-      : p <= 4 ? 'z-cl' : p === 5 ? 'z-el' : p === 6 ? 'z-ecl' : p === n - 2 ? 'z-rel' : p > n - 2 ? 'z-ab' : '');
     return `<p class="faint" style="font-size:12px;margin:14px 2px 8px;font-weight:600">${esc(t.name || '')}${t.updatedAt ? ' · Stand ' + esc(rel(t.updatedAt)) : ''}</p>
       <div class="card" style="padding:6px 8px"><table class="table"><thead><tr><th>#</th><th>Verein</th><th>Sp</th><th>TD</th><th>Pkt</th></tr></thead><tbody>
-      ${t.rows.map((r) => `<tr class="${r.isBVB ? 'me' : ''}"><td><span class="zone ${zone(r.pos)}"></span>${r.pos}</td><td><span class="tm">${crest({ name: r.team, icon: r.icon }, 'crest xs')}<span>${esc(r.short || r.team)}</span></span></td><td>${r.played}</td><td>${r.diff > 0 ? '+' : ''}${r.diff}</td><td>${r.points}</td></tr>`).join('')}
-      </tbody></table></div>
-      ${key === 'bl1' ? '<p class="faint" style="font-size:11px;margin-top:10px;line-height:2;font-weight:600"><span class="zone z-cl"></span>Champions League &nbsp; <span class="zone z-el"></span>Europa League &nbsp; <span class="zone z-ecl"></span>Conference League &nbsp; <span class="zone z-rel"></span>Relegation &nbsp; <span class="zone z-ab"></span>Abstieg</p>'
-    : '<p class="faint" style="font-size:11px;margin-top:10px;line-height:2;font-weight:600"><span class="zone z-cl"></span>Achtelfinale &nbsp; <span class="zone z-el"></span>Playoffs &nbsp; <span class="zone z-ab"></span>Ausgeschieden</p>'}`;
+      ${t.rows.map((r) => `<tr class="${r.isBVB ? 'me' : ''}"><td>${r.pos}</td><td><span class="tm">${crest({ name: r.team, icon: r.icon }, 'crest xs')}<span>${esc(r.short || r.team)}</span></span></td><td>${r.played}</td><td>${r.diff > 0 ? '+' : ''}${r.diff}</td><td>${r.points}</td></tr>`).join('')}
+      </tbody></table></div>`;
   }
   function scorerView(k) {
-    const ps = (team(k).players || []).map((p) => Object.assign({ s: statsOf(k, p.id) || {} }, p)).filter((p) => (p.s.goals || 0) + (p.s.assists || 0) > 0)
-      .sort((a, b) => ((b.s.goals || 0) - (a.s.goals || 0)) || ((b.s.assists || 0) - (a.s.assists || 0)));
-    if (!ps.length) return '<div class="empty" style="margin-top:14px">Noch keine Torschützen.</div>';
+    const comp = k === 'profis' ? UI.statsComp : 'all';
+    const tab = ['goals', 'assists', 'scorer'].includes(UI.scorerTab) ? UI.scorerTab : 'goals';
+    const val = (p) => (tab === 'scorer' ? (p.s.goals || 0) + (p.s.assists || 0) : p.s[tab] || 0);
+    const unit = { goals: ['Tor', 'Tore'], assists: ['Vorlage', 'Vorlagen'], scorer: ['Scorer', 'Scorer'] }[tab];
+    const ps = (team(k).players || []).map((p) => Object.assign({ s: statsOf(k, p.id, comp) || {} }, p)).filter((p) => val(p) > 0)
+      .sort((a, b) => (val(b) - val(a)) || ((b.s.goals || 0) - (a.s.goals || 0)) || ((b.s.assists || 0) - (a.s.assists || 0)) || ((a.s.minutes || 0) - (b.s.minutes || 0)));
+    let out = `<div class="set-seg sc-seg" role="group" aria-label="Rangliste">${[['goals', 'Torschützen'], ['assists', 'Vorlagen'], ['scorer', 'Scorer']].map(([v, l]) => `<button type="button" class="${tab === v ? 'on' : ''}" aria-pressed="${tab === v}" data-action="scorertab" data-val="${v}">${l}</button>`).join('')}</div>`;
+    if (k === 'profis') out += compChips();
+    if (!ps.length) return out + `<div class="empty" style="margin-top:14px">Noch keine ${tab === 'goals' ? 'Torschützen' : tab === 'assists' ? 'Vorlagen' : 'Scorerpunkte'}.</div>`;
     const top = ps.slice(0, 3);
     const order = [top[1], top[0], top[2]];
-    const pod = order.map((p, i) => (p ? `<a class="pod ${['p2', 'p1', 'p3'][i]}" href="#/spieler/${k}/${p.id}">${img(pimg(p.img, 'medium'), 'avatar', p.name, initials(p.name))}<span class="pod-name">${esc(lastName(p.name))}</span><span class="pod-block"><b>${p.s.goals || 0}</b><span>Tore</span></span></a>` : '<span></span>')).join('');
-    return `<p class="faint" style="font-size:12px;margin:14px 2px 0;font-weight:600">Alle Wettbewerbe${k === 'profis' ? ' · Tore live aus den Spielberichten' : ''}</p>
+    const pod = order.map((p, i) => (p ? `<a class="pod ${['p2', 'p1', 'p3'][i]}" href="#/spieler/${k}/${p.id}">${img(pimg(p.img, 'medium'), 'avatar', p.name, initials(p.name))}<span class="pod-name">${esc(lastName(p.name))}</span><span class="pod-block"><b>${val(p)}</b><span>${val(p) === 1 ? unit[0] : unit[1]}</span></span></a>` : '<span></span>')).join('');
+    return out + `<p class="faint" style="font-size:12px;margin:14px 2px 0;font-weight:600">${comp === 'all' ? 'Alle Wettbewerbe' : esc((COMPS.find((c) => c[0] === comp) || [])[1] || '')}${tab === 'scorer' ? ' · Scorer = Tore + Vorlagen' : ''}</p>
       <div class="podium">${pod}</div>
       <div class="card flat" style="margin-top:14px"><div class="list">${ps.map((p, i) => `<a class="li" href="#/spieler/${k}/${p.id}"><span class="rank">${i + 1}</span>${img(pimg(p.img, 'medium'), 'avatar sm', p.name, initials(p.name))}
-      <span class="grow"><div class="t ellipsis">${esc(p.name)}</div><div class="s">${p.s.apps || 0} Spiele · ${p.s.assists || 0} Vorlagen</div></span><span class="num yellow" style="font-size:24px">${p.s.goals || 0}</span></a>`).join('')}</div></div>`;
+      <span class="grow"><div class="t ellipsis">${esc(p.name)}${favMark(k, p.id)}</div><div class="s">${p.s.apps || 0} Spiele · ${p.s.goals || 0} Tore · ${p.s.assists || 0} Vorlagen</div></span><span class="num yellow" style="font-size:24px">${val(p)}</span></a>`).join('')}</div></div>`;
   }
 
   // ------------------------------------------------------------------ Kader & Spieler
@@ -1293,6 +1281,13 @@
         <div class="kv"><span>Modell</span><span>${esc(gem.model || '')}${gem.grounded ? ' · mit Suche' : ''}</span></div>`
         : `<p class="muted" style="font-size:12px;line-height:1.55;margin-top:6px">${gem.error ? `Gemini konnte zuletzt nicht antworten (${esc(gem.error)}). Spiele, Tabellen und Live-Tore laufen trotzdem weiter.` : 'Liest Meldungen von Romano, Sky, kicker &amp; Co. und macht daraus Here-we-go-Karten, Verletzungs-News, Vertragsverlängerungen und das KI-Briefing.'}</p>`}
     </section>`;
+    const ai = st.ai || {};
+    if (Object.keys(ai).length) {
+      const on = [['gemini', 'Gemini'], ['groq', 'Groq'], ['cerebras', 'Cerebras'], ['openrouter', 'OpenRouter'], ['mistral', 'Mistral']];
+      out += `<section class="card" style="margin-top:12px;display:flex;flex-direction:column;gap:10px"><span class="eyebrow">KI-Team · springt der Reihe nach ein</span>
+        <div class="ai-chips">${on.map(([k2, l]) => `<span class="chip sm ${ai[k2] ? 'ok' : 'ghost'}">${ai[k2] ? '✓' : '–'} ${l}</span>`).join('')}</div>
+        <p class="faint" style="font-size:12px;line-height:1.5;font-weight:600">Antwortet Gemini nicht, übernehmen die anderen News, Gerüchte und Verletzungen. Prognosen, Wahrscheinlichkeiten und den KI-Tipp rechnet die App selbst – ganz ohne KI.</p></section>`;
+    }
     const modRow = (m) => `<div class="mod">${m.ok === false ? I.bad : m.warning ? I.warn : I.ok}<span class="grow"><b>${esc(m.label)}</b>${m.ok === false ? `<div class="red" style="font-size:12px">${esc(m.error || 'Fehler')}</div>` : m.warning ? `<div class="amber" style="font-size:12px">${esc(m.warning)}</div>` : ''}<div class="faint" style="font-size:11px;font-weight:600">${m.at ? 'aktualisiert ' + esc(rel(m.at)) : 'noch nie'}${m.seconds != null ? ' · ' + m.seconds + ' s' : ''}</div></span></div>`;
     out += `<section class="sec"><div class="sec-h"><h2>Automatisch</h2><span class="note">GitHub · 3× täglich</span></div><div class="card flat">${mods.map(modRow).join('')}</div></section>`;
     const pc = D['status-pc'] || {};
@@ -1345,6 +1340,15 @@
     '4-2-3-1': [['TW', 50, 89, 'Torwart'], ['LV', 14, 70, 'Abwehr'], ['IV', 37, 75, 'Abwehr'], ['IV', 63, 75, 'Abwehr'], ['RV', 86, 70, 'Abwehr'], ['DM', 36, 55, 'Mittelfeld'], ['DM', 64, 55, 'Mittelfeld'], ['LA', 16, 34, 'Sturm'], ['ZOM', 50, 37, 'Mittelfeld'], ['RA', 84, 34, 'Sturm'], ['ST', 50, 15, 'Sturm']],
     '3-4-3': [['TW', 50, 89, 'Torwart'], ['IV', 25, 73, 'Abwehr'], ['IV', 50, 76, 'Abwehr'], ['IV', 75, 73, 'Abwehr'], ['LM', 12, 49, 'Mittelfeld'], ['ZM', 37, 53, 'Mittelfeld'], ['ZM', 63, 53, 'Mittelfeld'], ['RM', 88, 49, 'Mittelfeld'], ['LA', 20, 23, 'Sturm'], ['ST', 50, 16, 'Sturm'], ['RA', 80, 23, 'Sturm']],
     '4-4-2': [['TW', 50, 89, 'Torwart'], ['LV', 14, 70, 'Abwehr'], ['IV', 37, 75, 'Abwehr'], ['IV', 63, 75, 'Abwehr'], ['RV', 86, 70, 'Abwehr'], ['LM', 14, 46, 'Mittelfeld'], ['ZM', 38, 50, 'Mittelfeld'], ['ZM', 62, 50, 'Mittelfeld'], ['RM', 86, 46, 'Mittelfeld'], ['ST', 36, 18, 'Sturm'], ['ST', 64, 18, 'Sturm']],
+    '3-5-2': [['TW', 50, 89, 'Torwart'], ['IV', 25, 73, 'Abwehr'], ['IV', 50, 76, 'Abwehr'], ['IV', 75, 73, 'Abwehr'], ['LM', 10, 47, 'Mittelfeld'], ['ZM', 31, 53, 'Mittelfeld'], ['ZM', 50, 58, 'Mittelfeld'], ['ZM', 69, 53, 'Mittelfeld'], ['RM', 90, 47, 'Mittelfeld'], ['ST', 36, 18, 'Sturm'], ['ST', 64, 18, 'Sturm']],
+    '3-4-2-1': [['TW', 50, 89, 'Torwart'], ['IV', 25, 73, 'Abwehr'], ['IV', 50, 76, 'Abwehr'], ['IV', 75, 73, 'Abwehr'], ['LM', 12, 51, 'Mittelfeld'], ['ZM', 37, 55, 'Mittelfeld'], ['ZM', 63, 55, 'Mittelfeld'], ['RM', 88, 51, 'Mittelfeld'], ['ZOM', 32, 32, 'Mittelfeld'], ['ZOM', 68, 32, 'Mittelfeld'], ['ST', 50, 15, 'Sturm']],
+    '3-4-1-2': [['TW', 50, 89, 'Torwart'], ['IV', 25, 73, 'Abwehr'], ['IV', 50, 76, 'Abwehr'], ['IV', 75, 73, 'Abwehr'], ['LM', 12, 51, 'Mittelfeld'], ['ZM', 37, 55, 'Mittelfeld'], ['ZM', 63, 55, 'Mittelfeld'], ['RM', 88, 51, 'Mittelfeld'], ['ZOM', 50, 35, 'Mittelfeld'], ['ST', 36, 17, 'Sturm'], ['ST', 64, 17, 'Sturm']],
+    '4-1-4-1': [['TW', 50, 89, 'Torwart'], ['LV', 14, 70, 'Abwehr'], ['IV', 37, 75, 'Abwehr'], ['IV', 63, 75, 'Abwehr'], ['RV', 86, 70, 'Abwehr'], ['DM', 50, 59, 'Mittelfeld'], ['LM', 14, 42, 'Mittelfeld'], ['ZM', 38, 45, 'Mittelfeld'], ['ZM', 62, 45, 'Mittelfeld'], ['RM', 86, 42, 'Mittelfeld'], ['ST', 50, 16, 'Sturm']],
+    '4-4-1-1': [['TW', 50, 89, 'Torwart'], ['LV', 14, 70, 'Abwehr'], ['IV', 37, 75, 'Abwehr'], ['IV', 63, 75, 'Abwehr'], ['RV', 86, 70, 'Abwehr'], ['LM', 14, 49, 'Mittelfeld'], ['ZM', 38, 53, 'Mittelfeld'], ['ZM', 62, 53, 'Mittelfeld'], ['RM', 86, 49, 'Mittelfeld'], ['HS', 50, 32, 'Sturm'], ['ST', 50, 15, 'Sturm']],
+    '4-3-1-2': [['TW', 50, 89, 'Torwart'], ['LV', 14, 70, 'Abwehr'], ['IV', 37, 75, 'Abwehr'], ['IV', 63, 75, 'Abwehr'], ['RV', 86, 70, 'Abwehr'], ['DM', 50, 60, 'Mittelfeld'], ['ZM', 27, 50, 'Mittelfeld'], ['ZM', 73, 50, 'Mittelfeld'], ['ZOM', 50, 37, 'Mittelfeld'], ['ST', 36, 17, 'Sturm'], ['ST', 64, 17, 'Sturm']],
+    '4-2-2-2': [['TW', 50, 89, 'Torwart'], ['LV', 14, 70, 'Abwehr'], ['IV', 37, 75, 'Abwehr'], ['IV', 63, 75, 'Abwehr'], ['RV', 86, 70, 'Abwehr'], ['DM', 36, 57, 'Mittelfeld'], ['DM', 64, 57, 'Mittelfeld'], ['ZOM', 22, 35, 'Mittelfeld'], ['ZOM', 78, 35, 'Mittelfeld'], ['ST', 38, 16, 'Sturm'], ['ST', 62, 16, 'Sturm']],
+    '5-3-2': [['TW', 50, 89, 'Torwart'], ['LV', 9, 62, 'Abwehr'], ['IV', 29, 74, 'Abwehr'], ['IV', 50, 77, 'Abwehr'], ['IV', 71, 74, 'Abwehr'], ['RV', 91, 62, 'Abwehr'], ['ZM', 27, 47, 'Mittelfeld'], ['ZM', 50, 51, 'Mittelfeld'], ['ZM', 73, 47, 'Mittelfeld'], ['ST', 36, 18, 'Sturm'], ['ST', 64, 18, 'Sturm']],
+    '5-4-1': [['TW', 50, 89, 'Torwart'], ['LV', 9, 63, 'Abwehr'], ['IV', 29, 75, 'Abwehr'], ['IV', 50, 78, 'Abwehr'], ['IV', 71, 75, 'Abwehr'], ['RV', 91, 63, 'Abwehr'], ['LM', 16, 44, 'Mittelfeld'], ['ZM', 39, 48, 'Mittelfeld'], ['ZM', 61, 48, 'Mittelfeld'], ['RM', 84, 44, 'Mittelfeld'], ['ST', 50, 17, 'Sturm']],
   };
   const elf = () => store.get('elf', { f: '4-3-3', s: {} });
   function vElf() {
@@ -1394,10 +1398,10 @@
     const lvl = { profis: 2, u23: 1, u19: 0 };
     list.sort((a, b) => (lvl[b.team] - lvl[a.team]) || ((sOf(b).apps || 0) - (sOf(a).apps || 0)) || ((sOf(b).goals || 0) - (sOf(a).goals || 0)) || (a.age - b.age));
     const mx = Math.max(1, ...list.map((p) => sOf(p).apps || 0));
-    const line = (p) => { const s = sOf(p); return `${s.apps || 0} Sp.${s.goals ? ` · ${s.goals} ${s.goals === 1 ? 'Tor' : 'Tore'}` : ''}`; };
-    let out = pageHead('Talente-<em>Radar</em>', 'Alle Spieler bis 21 Jahre', '', '#/mehr');
+    const line = (p) => { const s = sOf(p); return `${s.apps || 0} Sp. · ${s.goals || 0} T. · ${s.assists || 0} V.`; };
+    let out = pageHead('Talente-<em>Radar</em>', 'Alle Spieler bis 21 Jahre · sortiert nach Einsätzen', '', '#/mehr');
     if (list.length >= 3) {
-      out += `<div class="pgrid" style="grid-template-columns:repeat(3,minmax(0,1fr))">${list.slice(0, 3).map((p) => `<a class="pc" href="#/spieler/${p.team}/${p.id}" data-vt="player"><span class="pc-media" style="height:120px">${img(pimg(p.img, 'big'), '', p.name, initials(p.name), 'style="height:116px"')}</span><span class="pc-body"><span class="pc-name" style="font-size:15px">${esc(lastName(p.name))}</span><span class="pc-pos">${p.age} J. · ${esc(TEAMNAME[p.team])}</span><span class="pc-val" style="font-size:15px">${esc(line(p))}</span></span></a>`).join('')}</div>`;
+      out += `<div class="pgrid" style="grid-template-columns:repeat(3,minmax(0,1fr))">${list.slice(0, 3).map((p) => `<a class="pc" href="#/spieler/${p.team}/${p.id}" data-vt="player"><span class="pc-media" style="height:120px">${img(pimg(p.img, 'big'), '', p.name, initials(p.name), 'style="height:116px"')}</span><span class="pc-body"><span class="pc-name" style="font-size:15px">${esc(lastName(p.name))}</span><span class="pc-pos">${p.age} J. · ${esc(TEAMNAME[p.team])}</span><span class="pc-val" style="font-size:13px">${esc(line(p))}</span></span></a>`).join('')}</div>`;
     }
     out += `<div class="card flat" style="margin-top:14px"><div class="list">${list.slice(0, 30).map((p, i) => `<a class="li" href="#/spieler/${p.team}/${p.id}"><span class="rank">${i + 1}</span>${img(pimg(p.img, 'medium'), 'avatar sm', p.name, initials(p.name))}
       <span class="grow" style="display:flex;flex-direction:column;gap:5px"><span class="row" style="justify-content:space-between;gap:8px"><span class="t ellipsis">${esc(p.name)}</span><span class="v">${esc(line(p))}</span></span>
@@ -1455,7 +1459,8 @@
       <p><b>BVB 09</b> ist eine inoffizielle Fan-App und nicht mit Borussia Dortmund verbunden. Namen, Wappen und Fotos gehören den jeweiligen Rechteinhabern.</p>
       <p><b>So bleibt alles aktuell:</b> Jeden Tag um 8:17, 14:17 und 20:17 Uhr läuft ein Programm auf GitHub. Es holt Spiele und die Bundesliga-Tabelle von OpenLigaDB, die Champions-League-Tabelle, Statistiken und den offiziellen Kader (Rückennummern, Zu- und Abgänge) von ESPN und Schlagzeilen über Google News. Die kostenlose <b>Gemini-KI</b> macht daraus Here-we-go-Karten, Verletzungs-News, Vertragsverlängerungen und das KI-Briefing. Statistiken kommen von ESPN, Tore zählt die App live aus den Spielberichten. Marktwerte gibt es direkt bei Transfermarkt (Transfers → TM).</p>
       <p><b>Spieltag-Zentrale:</b> Vor jedem Spiel schreibt Gemini einen Vorbericht mit KI-Tipp, nach dem Spiel einen Spielbericht. Offizielle Aufstellung, Live-Ticker und Statistik kommen während des Spiels direkt von ESPN. An Spieltagen läuft das Update zusätzlich stündlich. Dein Tippspiel wird nur auf deinem Handy gespeichert.</p>
-      <p><b>Saison:</b> Die Prognose simuliert die restliche Bundesliga-Saison 4000-mal mit einem Tormodell aus den bisherigen Ergebnissen (Angriff, Abwehr, Heimvorteil). Die Konferenz zeigt alle Spiele des Spieltags live mit Live-Tabelle.</p>
+      <p><b>Prognosen &amp; KI-Tipp</b> rechnet die App selbst – ganz ohne KI: Spielstärken (Angriff, Abwehr, Heimvorteil) aus Wettquoten und den Ergebnissen dieser und der letzten Saison, dann 15.000 simulierte Saisonverläufe. Die Champions League läuft mit allen Regeln: Ligaphase, Playoffs, Turnierbaum, Hin- und Rückspiel, Verlängerung und Elfmeterschießen – gespielte Hinspiele zählen mit. Nach jedem Bundesliga- und CL-Spiel wird neu gerechnet. Der KI-Tipp ist das Ergebnis mit den meisten erwarteten Tipp-Punkten.</p>
+      <p><b>Konferenz:</b> alle Spiele des Spieltags live mit Live-Tabelle.</p>
       <p><b>Wetter &amp; Videos:</b> Das Wetter zum Anpfiff kommt von Open-Meteo (Stadion über OpenStreetMap), Highlights und Pressekonferenzen vom offiziellen YouTube-Kanal des BVB.</p>
       <p><b>Deine Einstellungen</b> (Name, Lieblingsspieler, Startseite, Tipps) bleiben nur auf deinem Handy gespeichert.</p>
       <p><b>Transfermarkt</b> sperrt Server mit einem Bot-Schutz. Positionen, Verträge sowie Kader und Statistiken von BVB II und U19 stammen daher vom letzten direkten Abruf; Verlängerungen und Wechsel ergänzt die KI aus den News.</p>
@@ -1566,26 +1571,53 @@
     </svg>`;
   }
   const pctTxt = (v) => (v == null ? 'k. A.' : v >= 99.95 ? '100 %' : v > 0 && v < 0.1 ? '<0,1 %' : nf1.format(v) + ' %');
+  function tieCard(t) {
+    const fin = t.round === 'final';
+    const legs = (t.legs || []).map((l, i) => `<div class="tie-leg"><span class="eyebrow">${fin ? 'Finale' : (l.leg === 2 || i === 1) ? 'Rückspiel' : 'Hinspiel'} · ${l.home ? 'Heim' : 'Auswärts'}</span><b>${l.score ? esc(l.score) : esc(F.dm.format(new Date(l.date)))}</b></div>`).join('');
+    return `<div class="card tie-card"><div class="row" style="gap:12px">${crest({ name: t.opp.name, icon: t.opp.logo }, 'crest md')}<span class="grow"><span class="eyebrow">${esc(t.label)}</span><div class="tie-opp">gegen ${esc(t.opp.name)}</div></span>
+      <span class="tie-p"><b>${esc(pctTxt(t.p))}</b><span>${fin ? 'Titel' : 'weiter'}</span></span></div><div class="tie-legs">${legs}</div></div>`;
+  }
   function vSaisonTab() {
     const se = D.season || {};
-    if (!se.fever) return '<div class="empty" style="margin-top:14px">Die Saison-Analyse kommt mit dem nächsten Update.</div>';
-    const cur = se.fever.cur || [];
-    const prev = se.fever.prev || [];
+    if (!se.fever && !se.forecast) return '<div class="empty" style="margin-top:14px">Die Saison-Analyse kommt mit dem nächsten Update.</div>';
+    let out = '';
+    const cur = (se.fever || {}).cur || [];
+    const prev = (se.fever || {}).prev || [];
     const last = cur[cur.length - 1];
     const pSame = last ? prev.find((q) => q[0] === last[0]) : null;
-    let out = `<section class="card fv-card" style="margin-top:14px"><div class="row" style="justify-content:space-between;align-items:flex-start"><span><span class="eyebrow">Fieberkurve</span><div style="font-size:15px;font-weight:800;margin-top:3px">${last ? `Nach ${last[0]} ${last[0] === 1 ? 'Spieltag' : 'Spieltagen'}: Platz ${last[1]}` : 'Noch kein Spieltag'}</div>${pSame ? `<div class="faint" style="font-size:12px;font-weight:600">Vorsaison zum gleichen Zeitpunkt: Platz ${pSame[1]} · ${last[2] - pSame[2] >= 0 ? '+' : ''}${last[2] - pSame[2]} Punkte</div>` : ''}</span></div>
-      ${feverSvg(cur, prev)}<div class="fv-legend"><span><i class="cur"></i>Diese Saison</span><span><i class="prev"></i>Vorsaison</span><span><i class="cl"></i>Champions League</span><span><i class="down"></i>Abstieg</span></div></section>`;
+    if (se.fever) {
+      out += `<section class="card fv-card" style="margin-top:14px"><div class="row" style="justify-content:space-between;align-items:flex-start"><span><span class="eyebrow">Fieberkurve</span><div style="font-size:15px;font-weight:800;margin-top:3px">${last ? `Nach ${last[0]} ${last[0] === 1 ? 'Spieltag' : 'Spieltagen'}: Platz ${last[1]}` : 'Noch kein Spieltag'}</div>${pSame ? `<div class="faint" style="font-size:12px;font-weight:600">Vorsaison zum gleichen Zeitpunkt: Platz ${pSame[1]} · ${last[2] - pSame[2] >= 0 ? '+' : ''}${last[2] - pSame[2]} Punkte</div>` : ''}</span></div>
+        ${feverSvg(cur, prev)}<div class="fv-legend"><span><i class="cur"></i>Diese Saison</span><span><i class="prev"></i>Vorsaison</span><span><i class="cl"></i>Champions League</span><span><i class="down"></i>Abstieg</span></div></section>`;
+    }
+    const withOdds = ((se.model || {}).odds || 0) > 0;
+    const how = withOdds ? 'Wettquoten + Ergebnisse' : 'Ergebnisse';
     const fc = se.forecast;
     const me = fc && (fc.teams || []).find((t) => t.isBVB);
     if (me) {
       const rings = [['Meister', me.title, 'var(--y)'], ['Champions League', me.cl, 'var(--y)'], ['Europa / Conference', me.el + me.ecl, '#5AA9FF'], ['Abstieg', me.down + me.rel, 'var(--loss)']];
-      out += `<section class="sec"><div class="sec-h"><h2>Saison-Prognose</h2><span class="note">${nf0.format(fc.sims)} simulierte Restsaisons</span></div>
+      out += `<section class="sec"><div class="sec-h"><h2>Bundesliga-Prognose</h2><span class="note">${nf0.format(fc.sims)} Simulationen</span></div>
         <div class="card fc-pro"><div class="pro-rings">${rings.map(([l, v, c]) => `<div class="pro-ring"><span class="pro-r">${ring((v || 0) / 100, 70, 7, c)}<b>${esc(pctTxt(v))}</b></span><span>${l}</span></div>`).join('')}</div>
         <div class="kv"><span>Erwartete Punkte am Saisonende</span><span>${nf1.format(me.expPoints)}</span></div>
         <div class="pro-dist" aria-label="Wahrscheinlichkeit je Tabellenplatz">${(me.dist || []).map((v, i) => `<span style="--h:${Math.max(2, Math.min(100, v * 2.2)).toFixed(1)}%" class="${i < 4 ? 'cl' : i >= 15 ? 'down' : ''}" title="Platz ${i + 1}: ${nf1.format(v)} %"><i></i><em>${i + 1}</em></span>`).join('')}</div>
-        <p class="faint" style="font-size:11px;font-weight:600;line-height:1.6;margin-top:10px">Wahrscheinlichkeit für jeden Tabellenplatz. Berechnet aus den bisherigen Toren aller Teams (Angriff, Abwehr, Heimvorteil) – eine Schätzung, keine Garantie.</p></div></section>`;
+        <p class="faint" style="font-size:11px;font-weight:600;line-height:1.6;margin-top:10px">Wahrscheinlichkeit für jeden Tabellenplatz – berechnet aus ${how} dieser und der letzten Saison, nach jedem Spiel neu. Eine Schätzung, keine Garantie.</p></div></section>`;
       const top = [...fc.teams].sort((a, b) => b.title - a.title).slice(0, 5);
       out += `<section class="sec"><div class="sec-h"><h2>Meister-Chancen</h2></div><div class="card flat"><div class="list">${top.map((t) => `<div class="li ${t.isBVB ? 'me-row' : ''}">${crest({ name: t.team, icon: t.icon }, 'crest sm')}<span class="grow" style="display:flex;flex-direction:column;gap:6px"><span class="row" style="justify-content:space-between"><span class="t ellipsis">${esc(t.short || t.team)}</span><span class="v">${esc(pctTxt(t.title))}</span></span><span class="bar"><span style="width:${Math.max(1, t.title).toFixed(1)}%"></span></span></span></div>`).join('')}</div></div></section>`;
+    }
+    const cl = se.cl;
+    const cm = cl && (cl.teams || []).find((t) => t.isBVB);
+    if (cm) {
+      const rings = cl.leagueDone ? [['Achtelfinale', cm.r16], ['Viertelfinale', cm.qf], ['Halbfinale', cm.sf], ['CL-Sieg', cm.win]]
+        : [['Top 8', cm.top8], ['Top 24', cm.top24], ['Viertelfinale', cm.qf], ['CL-Sieg', cm.win]];
+      out += `<section class="sec"><div class="sec-h"><h2>Champions League</h2><span class="note">${nf0.format(cl.sims)} Simulationen</span></div>`;
+      if (cl.tie) out += tieCard(cl.tie);
+      out += `<div class="card fc-pro" ${cl.tie ? 'style="margin-top:12px"' : ''}><div class="pro-rings">${rings.map(([l, v]) => `<div class="pro-ring"><span class="pro-r">${ring((v || 0) / 100, 70, 7, 'var(--y)')}<b>${esc(pctTxt(v))}</b></span><span>${l}</span></div>`).join('')}</div>
+        <div class="cl-path">${[['K.-o.-Phase', cm.top24], ['Achtelfinale', cm.r16], ['Viertelfinale', cm.qf], ['Halbfinale', cm.sf], ['Finale', cm.final], ['Sieger', cm.win]].map(([l, v], i) => `<div class="clp"><span class="clp-l">${l}</span><span class="clp-bar"><i style="--w:${Math.max(0.8, v || 0).toFixed(1)}%;animation-delay:${(i * 0.06).toFixed(2)}s"></i></span><span class="clp-v">${esc(pctTxt(v))}</span></div>`).join('')}</div>
+        ${!cl.leagueDone ? `<div class="kv"><span>Ligaphase: aktuell Platz ${cm.pos || '–'} · erwartete Punkte</span><span>${nf1.format(cm.expPoints)}</span></div>
+        <div class="pro-dist d36" aria-label="Wahrscheinlichkeit je Platz in der Ligaphase">${(cm.dist || []).map((v, i) => `<span style="--h:${Math.max(2, Math.min(100, v * 3)).toFixed(1)}%" class="${i < 8 ? 'cl' : i >= 24 ? 'down' : 'po'}" title="Platz ${i + 1}: ${nf1.format(v)} %"><i></i><em>${[1, 8, 24, 36].includes(i + 1) ? i + 1 : ''}</em></span>`).join('')}</div>` : ''}
+        <p class="faint" style="font-size:11px;font-weight:600;line-height:1.6;margin-top:10px">Platz 1–8 direkt ins Achtelfinale, 9–24 in die Playoffs, ab 25 raus. Die K.-o.-Runden sind komplett mit Turnierbaum, Hin- und Rückspiel, Verlängerung und Elfmeterschießen simuliert – gespielte Hinspiele zählen mit. Berechnet aus ${how}.</p></div></section>`;
+      const fav = [...cl.teams].sort((a, b) => b.win - a.win).slice(0, 8);
+      if (!fav.some((t) => t.isBVB)) fav.push(cm);
+      out += `<section class="sec"><div class="sec-h"><h2>Titel-Favoriten</h2><span class="note">Champions League</span></div><div class="card flat"><div class="list">${fav.map((t) => `<div class="li ${t.isBVB ? 'me-row' : ''}">${crest({ name: t.team, icon: t.icon }, 'crest sm')}<span class="grow" style="display:flex;flex-direction:column;gap:6px"><span class="row" style="justify-content:space-between"><span class="t ellipsis">${esc(t.team)}</span><span class="v">${esc(pctTxt(t.win))}</span></span><span class="bar"><span style="width:${Math.max(1, t.win * 2.5).toFixed(1)}%"></span></span></span></div>`).join('')}</div></div></section>`;
     }
     const sc = se.scorers || [];
     if (sc.length) {
@@ -1621,7 +1653,9 @@
   // Tippspiel – gespeichert nur auf diesem Gerät
   const tipsAll = () => store.get('tips', {});
   const myTip = (id) => tipsAll()[id] || null;
-  const kiTip = (m) => (mcOf(m.id).preview || {}).tip || null;
+  const kiTip = (m) => (mcOf(m.id).model || {}).tip || (mcOf(m.id).preview || {}).tip || null;
+  const probBar = (mt) => (mt && mt.probs ? `<div class="pb" role="img" aria-label="Sieg ${mt.probs.w} Prozent, Remis ${mt.probs.d} Prozent, Niederlage ${mt.probs.l} Prozent">${[['w', 'Sieg'], ['d', 'Remis'], ['l', 'Niederl.']].map(([k, l]) => `<span class="pb-${k}" style="--w:${Math.max(8, mt.probs[k])}%"><b>${nf0.format(mt.probs[k])}%</b><em>${l}</em></span>`).join('')}</div>` : '');
+  const srcTxt = (mt) => (mt.src === 'quoten' ? 'aus den Wettquoten' : 'aus den Spielstärken');
   const tipOpen = (m) => !m.finished && Date.parse(m.date) > Date.now();
   const tipStr = (t, m) => (m.isHome ? `${t.bvb}:${t.opp}` : `${t.opp}:${t.bvb}`);
   function tipPts(t, m) {
@@ -1811,10 +1845,15 @@
     } else {
       out += `<div class="empty" style="margin-top:14px">${upcoming ? 'Der KI-Vorbericht kommt etwa zwei Tage vor dem Anpfiff.' : 'Für dieses Spiel gibt es keinen Vorbericht.'}</div>`;
     }
+    const mt = e.model;
+    if (mt && mt.probs) {
+      out += `<section class="card mc-prob" style="margin-top:12px"><div class="row" style="justify-content:space-between"><span class="eyebrow">Gewinnchancen BVB</span><span class="faint" style="font-size:11px;font-weight:700">${esc(srcTxt(mt))}</span></div>${probBar(mt)}</section>`;
+    }
     const k = kiTip(m);
     if (k) {
       const show = !!myTip(m.id) || !upcoming;
-      out += `<section class="card row mc-ki" style="margin-top:12px;gap:14px"><span class="ai-badge">${I.ai}</span><span class="grow"><span class="eyebrow">KI-Tipp</span><div style="font-size:13px;font-weight:600;margin-top:3px;line-height:1.4">${show ? esc(pv.tipReason || 'Prognose von Gemini') : 'Gib zuerst deinen eigenen Tipp ab – dann verrät dir die KI ihren.'}</div></span>
+      const why = (pv && pv.tipReason) || (mt ? `Berechnet ${srcTxt(mt)}: das Ergebnis mit den meisten erwarteten Tipp-Punkten.` : 'Prognose von Gemini');
+      out += `<section class="card row mc-ki" style="margin-top:12px;gap:14px"><span class="ai-badge">${I.ai}</span><span class="grow"><span class="eyebrow">KI-Tipp</span><div style="font-size:13px;font-weight:600;margin-top:3px;line-height:1.4">${show ? esc(why) : 'Gib zuerst deinen eigenen Tipp ab – dann verrät dir die KI ihren.'}</div></span>
         ${show ? `<b class="mc-tipnum">${tipStr(k, m)}</b>` : `<a class="chip y" href="#/spiel/${esc(m.id)}/tipp">Tippen</a>`}</section>`;
     }
     if (upcoming && e.weather) {
@@ -1865,6 +1904,7 @@
       const a = side('bvb', 'BVB', BVB);
       const b = side('opp', tname(opp), opp);
       out += `<section class="card tp-card" style="margin-top:14px"><span class="eyebrow">Dein Tipp</span><div class="tp-row">${m.isHome ? a : b}<span class="tp-colon">:</span>${m.isHome ? b : a}</div>
+        ${(mcOf(m.id).model || {}).probs ? `<div class="tp-prob"><span class="eyebrow">Gewinnchancen BVB · ${esc(srcTxt(mcOf(m.id).model))}</span>${probBar(mcOf(m.id).model)}</div>` : ''}
         <button type="button" class="btn" data-action="tip-save" data-id="${esc(m.id)}">${t ? 'Tipp ändern' : 'Tipp abgeben'}</button>
         <p class="faint" style="font-size:12px;font-weight:600;text-align:center">${t ? `Gespeichert: ${tipStr(t, m)} · änderbar bis zum Anpfiff` : 'Änderbar bis zum Anpfiff'}</p></section>`;
     } else {
@@ -2364,7 +2404,7 @@
   // Tageszeit-Design: Morgen, Tag, Abend, Nacht - am Spieltag Flutlicht
   function applyDaytime() {
     const root = document.documentElement;
-    if (!SET.daytime) { delete root.dataset.tod; delete root.dataset.md; return; }
+    if (!SET.daytime) { delete root.dataset.tod; delete root.dataset.md; const mt0 = $('meta[name="theme-color"]'); if (mt0) mt0.setAttribute('content', '#050505'); return; }
     const h = parseInt(F.hour.format(new Date()), 10);
     root.dataset.tod = h >= 5 && h < 11 ? 'morning' : h >= 11 && h < 17 ? 'day' : h >= 17 && h < 21 ? 'evening' : 'night';
     const live = D.loaded && matchList().some((m) => isLive(m));
@@ -2372,6 +2412,8 @@
     if (live) root.dataset.md = 'live';
     else if (nm && daysUntil(nm.date) === 0) root.dataset.md = '1';
     else delete root.dataset.md;
+    const meta = $('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', getComputedStyle(root).getPropertyValue('--bg').trim() || '#050505');
   }
 
   // ------------------------------------------------------------------ Spielervergleich
@@ -2681,6 +2723,7 @@
     else if (act === 'match') location.hash = '#/spiel/' + a.dataset.id;
     else if (act === 'story') { e.preventDefault(); openStories(storyItems(), +a.dataset.i, $('.story-ring', a)); }
     else if (act === 'statcomp') { UI.statsComp = a.dataset.val; render({ animate: false, keepScroll: true }); }
+    else if (act === 'scorertab') { UI.scorerTab = a.dataset.val; render({ animate: false, keepScroll: true }); }
     else if (act === 'yt') {
       const box = a.closest('.yt');
       if (box) box.outerHTML = `<div class="yt on"><iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(a.dataset.id)}?autoplay=1&playsinline=1&rel=0" title="Video" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe></div>`;

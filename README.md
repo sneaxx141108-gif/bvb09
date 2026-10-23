@@ -7,9 +7,10 @@ Web-App fürs iPhone (in Safari öffnen → Teilen → „Zum Home-Bildschirm“
 ## Was die App kann
 
 - **Transfers:** Here-we-go-Karten mit Spielerfoto, beiden Wappen, Ablöse, Boni und Vertrag; Gerüchte mit Wechselwahrscheinlichkeit und Gerüchte-Ampel; Transferbilanz; Vertragsübersicht; Links zu den Transfermarkt-Seiten von Profis, U23 und U19
-- **Spiele (Profis):** kommende Spiele mit Countdown, Ergebnisse mit Torschützen, Tabellen (Bundesliga und Champions League), Torschützenliste, Live-Ergebnisse während der Spiele
+- **Spiele (Profis):** kommende Spiele mit Countdown, Ergebnisse mit Torschützen, Tabellen (Bundesliga und Champions League), Ranglisten für Tore, Vorlagen und Scorer, Live-Ergebnisse während der Spiele
 - **Bundesliga-Konferenz:** alle Spiele des Spieltags live mit Live-Tabelle
-- **Saison:** Fieberkurve (Platz nach jedem Spieltag, mit Vorsaison), Saison-Prognose (Meister, Champions League, Abstieg), Liga-Torjäger
+- **Saison:** Fieberkurve (Platz nach jedem Spieltag, mit Vorsaison), Bundesliga-Prognose (Meister, Champions League, Abstieg), Champions-League-Prognose (Top 8, Top 24, jede K.-o.-Runde mit echtem Gegner und Hinspiel-Ergebnis, Titel), Liga-Torjäger
+- **KI-Tipp:** aus Wettquoten und Spielstärken berechnet – das Ergebnis mit den meisten erwarteten Tipp-Punkten, dazu die Gewinnchancen
 - **Spieltag-Zentrale:** KI-Vorbericht mit KI-Tipp, Wetter zum Anpfiff, offizielle Aufstellung, Live-Ticker und Live-Statistik (ESPN), KI-Spielbericht mit Spieler des Spiels, Highlights und Pressekonferenzen, Gegner-Check (Tabelle, Form, direkter Vergleich), Tor-Feier mit Torhorn und Live-Leiste
 - **Tippspiel:** Du gegen die KI (3/2/1 Punkte, nur auf dem Handy gespeichert)
 - **Kader:** alle Spieler mit Foto, Vertrag, Verletzungen und Sperren; Spielerprofil mit Statistiken je Wettbewerb (Bundesliga, Pokal, Champions League) und Formkurve; Lieblingsspieler; Spielervergleich
@@ -19,7 +20,7 @@ Web-App fürs iPhone (in Safari öffnen → Teilen → „Zum Home-Bildschirm“
 
 ## So bleibt alles aktuell
 
-`.github/workflows/update.yml` startet `scripts/update.py` 3× täglich (8:17, 14:17 und 20:17 Uhr deutscher Zeit) und an Spieltagen zusätzlich stündlich (`scripts/gate.py`):
+`.github/workflows/update.yml` startet `scripts/update.py` 3× täglich (8:17, 14:17 und 20:17 Uhr deutscher Zeit), an BVB-Spieltagen zusätzlich stündlich und kurz nach jedem Bundesliga- und Champions-League-Spiel (`scripts/gate.py`):
 
 | Was | Woher |
 |---|---|
@@ -27,7 +28,8 @@ Web-App fürs iPhone (in Safari öffnen → Teilen → „Zum Home-Bildschirm“
 | Statistiken der Profis (Spiele, Tore, Vorlagen, Karten, Minuten), Champions-League-Tabelle, offizieller Kader (Rückennummern, Zu- und Abgänge) | ESPN |
 | Vor- und Spielberichte, KI-Tipp, Monatsfazit, Stimmungsbarometer | Gemini aus Spieldaten und Google-News-Schlagzeilen |
 | Transfer-Storys, Verletzungen, Vertragsverlängerungen, KI-Briefing | Google News (u. a. kicker-, Sky-, Transfermarkt-News), ausgewertet von der kostenlosen **Gemini-KI** – nur vertrauenswürdige Quellen |
-| Fieberkurve, Saison-Prognose (4000 Simulationen), Liga-Torjäger, Basis für die Konferenz | berechnet aus OpenLigaDB |
+| Fieberkurve, Liga-Torjäger, Basis für die Konferenz | berechnet aus OpenLigaDB |
+| Bundesliga- und Champions-League-Prognose, KI-Tipp (je 15.000 Simulationen) | `scripts/forecast.py` – Spielstärken aus Ergebnissen (ESPN) und Wettquoten (DraftKings über ESPN), ganz ohne KI |
 | Wetter zum Anpfiff | Open-Meteo (Stadion über TheSportsDB und OpenStreetMap) |
 | Highlights und Pressekonferenzen | YouTube-Kanal des BVB (RSS) |
 | Fotos und Wappen für neue Spieler/Vereine | TheSportsDB |
@@ -36,7 +38,16 @@ Web-App fürs iPhone (in Safari öffnen → Teilen → „Zum Home-Bildschirm“
 
 Dafür muss unter *Settings → Secrets and variables → Actions* ein Secret namens `GEMINI_API_KEY` eingetragen sein. Ohne Gemini läuft alles weiter, nur die KI-Karten und das KI-Briefing fehlen dann.
 
-Optional springt **Groq** (ebenfalls kostenlos, Schlüssel unter console.groq.com) ein, wenn Gemini überlastet ist. Dafür ein zweites Secret `GROQ_API_KEY` anlegen.
+Antwortet Gemini nicht, springen kostenlose **Ersatz-KIs** der Reihe nach ein – jeweils mit eigenem Secret:
+
+| Secret | Kostenloser Schlüssel |
+|---|---|
+| `GROQ_API_KEY` | console.groq.com |
+| `CEREBRAS_API_KEY` | cloud.cerebras.ai |
+| `OPENROUTER_API_KEY` | openrouter.ai (nur Modelle mit „:free“) |
+| `MISTRAL_API_KEY` | console.mistral.ai |
+
+Welche KIs eingerichtet sind, zeigt die Update-Zentrale in der App. Prognosen und KI-Tipp brauchen keinen Schlüssel.
 
 **Update von Hand starten:** *Actions → Daten-Update → Run workflow*
 
