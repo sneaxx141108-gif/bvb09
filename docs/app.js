@@ -2550,8 +2550,11 @@
   }
   // Seitenwechsel: Detailseiten schieben sich wie bei iOS hinein, Tabs gleiten weich hinueber
   const levelOf = (path) => (/^\/vergleich/.test(path) ? 2 : /^\/(spieler|spiel)\/|^\/mehr\/./.test(path) ? 1 : 0);
+  // Uebergaenge nur, wenn der Browser beim Antippen gerade zeichnet - sonst (App/Fenster im Hintergrund) bliebe der Wechsel haengen
+  S.lastFrame = 0;
+  document.addEventListener('pointerdown', () => requestAnimationFrame(() => { S.lastFrame = performance.now(); }), { passive: true, capture: true });
   function navRender() {
-    if (!document.startViewTransition || reduce || !D.loaded || !S.route) { render(); return; }
+    if (!document.startViewTransition || reduce || !D.loaded || !S.route || document.visibilityState !== 'visible' || performance.now() - S.lastFrame > 1500) { render(); return; }
     const path = (location.hash || '#/home').slice(1) || '/home';
     if (path === S.route) { render(); return; }
     const r = ROUTES.find(([re]) => re.test(path)) || ROUTES[0];
@@ -2562,7 +2565,9 @@
     root.dataset.nav = nav;
     const t = document.startViewTransition(() => render({ animate: false, vt: true }));
     t.ready.catch(() => {}); // uebersprungen (schnelles Tippen, App im Hintergrund) - Seite ist trotzdem gerendert
-    t.finished.finally(() => { if (root.dataset.nav === nav) delete root.dataset.nav; });
+    // Sicherung: zeichnet der Browser gerade nicht (App im Hintergrund), haengt der Uebergang sonst mit beiden Seiten uebereinander
+    const wd = setTimeout(() => { try { t.skipTransition(); } catch (e) { /* schon fertig */ } }, 900);
+    t.finished.finally(() => { clearTimeout(wd); if (root.dataset.nav === nav) delete root.dataset.nav; });
   }
   function afterRender(v, opts) {
     raf2(() => {
@@ -2640,7 +2645,8 @@
     imgEl.style.viewTransitionName = 'player-photo';
     const t = document.startViewTransition(() => { history.pushState(null, '', href); S.prev = true; render({ animate: false }); });
     t.ready.catch(() => {});
-    t.finished.finally(() => { imgEl.style.viewTransitionName = ''; });
+    const wd = setTimeout(() => { try { t.skipTransition(); } catch (e) { /* schon fertig */ } }, 1100);
+    t.finished.finally(() => { clearTimeout(wd); imgEl.style.viewTransitionName = ''; });
   }
   // Haptik: iOS 18+ gibt beim Umschalten eines Schalters ein kurzes Tick - ein unsichtbarer Schalter macht das nutzbar
   const hapLabel = document.createElement('label');
@@ -2655,7 +2661,7 @@
     if (e.target.closest(HAPTIC)) haptic();
     if (e.target.closest('[data-close]')) { if (S.noClose && Date.now() - S.noClose < 450) return; closeSheet(); return; }
     const vt = e.target.closest('a[data-vt="player"]');
-    if (vt && !e.metaKey && !e.ctrlKey && document.startViewTransition && !reduce) {
+    if (vt && !e.metaKey && !e.ctrlKey && document.startViewTransition && !reduce && performance.now() - S.lastFrame < 1500) {
       const im = $('.pc-media img', vt);
       if (im) { e.preventDefault(); navigateVT(vt.getAttribute('href'), im); return; }
     }
