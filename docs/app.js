@@ -719,7 +719,7 @@
     return `<button type="button" class="mhero press ${live ? 'live' : ''} ${md ? 'md' : ''}" data-action="match" data-id="${esc(m.id)}" data-team="profis" style="width:100%;text-align:left;font:inherit${md ? `;--lux:${Math.max(0.15, 1 - hrs / 24).toFixed(2)}` : ''}" aria-label="${esc(tname(m.home))} gegen ${esc(tname(m.away))}, Spieltag-Zentrale öffnen">
       <span class="mh-light" aria-hidden="true"></span><span class="mh-beam l" aria-hidden="true"></span><span class="mh-beam r" aria-hidden="true"></span>
       <span class="mh-word" aria-hidden="true">${esc(word)}</span>
-      <span class="mh-top">${live ? '<span class="live-tag">LIVE</span>' : `<span class="chip y">${esc(m.comp || '')}${m.round ? ' · ' + esc(m.round) : ''}</span>`}<span class="eyebrow ${md ? 'md-tag' : ''}" style="color:var(--y)">${md ? 'Spieltag · ' : ''}${esc(when)}</span></span>
+      <span class="mh-top">${live ? '<span class="live-tag">LIVE</span>' : `<span class="chip y">${esc(compRound(m))}</span>`}<span class="eyebrow ${md ? 'md-tag' : ''}" style="color:var(--y)">${md ? 'Spieltag · ' : ''}${esc(when)}</span></span>
       <span class="mh-teams" style="display:grid">
         <span class="mh-team">${crest(m.home, 'crest')}<span class="mh-name ellipsis">${esc(tname(m.home))}</span></span>
         ${live ? `<span class="mh-score">${m.score ? m.score[0] + ':' + m.score[1] : '0:0'}</span>` : '<span class="mh-vs">VS</span>'}
@@ -1069,6 +1069,8 @@
     }
     return out;
   }
+  const TK_COMP = { Bundesliga: 'Liga', 'DFB-Pokal': 'Pokal', 'Champions League': 'CL', 'Europa League': 'EL', 'Conference League': 'ECL' };
+  const compRound = (m) => [TK_COMP[m.comp] || m.comp || '', String(m.round || '').replace(/^(\d+)\.(?=\S)/, '$1. ')].filter(Boolean).join(' · ');
   function ticket(m, k, isNext) {
     const live = isLive(m);
     const fin = m.finished && m.score;
@@ -1079,9 +1081,10 @@
       ? `<span class="d1">${m.outcome === 'W' ? 'Sieg' : m.outcome === 'L' ? 'Niederl.' : 'Remis'}</span><span class="d2">${m.score[0]}:${m.score[1]}</span><span class="d4">${esc(F.dm.format(d))}</span>`
       : live ? `<span class="d1">Live</span><span class="d2">${m.score ? m.score[0] + ':' + m.score[1] : '0:0'}</span><span class="d4">läuft</span>`
         : `<span class="d1">${esc(F.wd.format(d).replace('.', ''))}</span><span class="d2">${esc(F.dd.format(d))}</span><span class="d3">${m.timeKnown === false ? '--:--' : esc(F.time.format(d))}</span><span class="d4">${esc(F.mon.format(d).replace('.', ''))}</span>`;
+    const label = compRound(m);
     const teamRow = (t, side) => `<span class="tk-team ${/Dortmund/.test(t.name || '') ? 'me' : ''}">${crest(t, 'crest md')}<span>${esc(tname(t))}</span>${fin || live ? `<b>${m.score ? m.score[side] : 0}</b>` : ''}</span>`;
     return `<button type="button" class="ticket ${isNext ? 'next' : ''} ${live ? 'live' : ''} ${fin ? 'res ' + (m.outcome || '') : ''}" data-action="match" data-id="${esc(m.id)}" data-team="${k}">
-      <span class="tk-main"><span class="tk-comp">${live ? '<span class="live-tag">LIVE</span>' : `<span class="chip ${isNext ? 'y' : ''} sm">${esc(m.round || compShort(m.comp))}</span>`}<span class="eyebrow grow">${esc(m.comp || '')}</span>${when ? `<span class="eyebrow" style="color:var(--y)">${esc(when)}</span>` : ''}</span>
+      <span class="tk-main"><span class="tk-comp">${live ? '<span class="live-tag">LIVE</span>' : ''}<span class="chip ${isNext ? 'y' : ''} sm tk-label">${esc(label)}</span>${when ? `<span class="eyebrow tk-when">${esc(when)}</span>` : ''}</span>
       <span class="tk-teams">${teamRow(m.home, 0)}${teamRow(m.away, 1)}</span></span>
       <span class="tk-stub">${stub}</span>
     </button>`;
@@ -1882,7 +1885,7 @@
     const goals = (m.goals || []).map((g) => `<span class="goal ${g.team === 'away' ? 'away' : ''}"><time>${g.minute != null ? g.minute + "'" : ''}</time><span>${esc(g.scorer || 'Tor')}${g.penalty ? ' (E)' : ''}${g.ownGoal ? ' (ET)' : ''}</span><b>${esc(g.score || '')}</b></span>`).join('');
     return `<section class="mhero mc-hero ${live ? 'live' : ''} ${fin ? 'res ' + (m.outcome || '') : ''}">
       <span class="mh-light" aria-hidden="true"></span><span class="mh-beam l" aria-hidden="true"></span><span class="mh-beam r" aria-hidden="true"></span>
-      <span class="mh-top">${live ? `<span class="live-tag">LIVE${S.mcClockId === m.id && S.mcClock ? ' · ' + esc(S.mcClock) : ''}</span>` : `<span class="chip y">${esc(m.comp || '')}${m.round ? ' · ' + esc(m.round) : ''}</span>`}<span class="eyebrow" style="color:var(--y)">${esc(when)}</span></span>
+      <span class="mh-top">${live ? `<span class="live-tag">LIVE${S.mcClockId === m.id && S.mcClock ? ' · ' + esc(S.mcClock) : ''}</span>` : `<span class="chip y">${esc(compRound(m))}</span>`}<span class="eyebrow" style="color:var(--y)">${esc(when)}</span></span>
       <span class="mh-teams" style="display:grid">
         <span class="mh-team">${crest(m.home, 'crest')}<span class="mh-name ellipsis">${esc(tname(m.home))}</span></span>
         ${fin || live ? `<span class="mc-score"><span class="mh-score" data-mc-score>${scoreStr(m)}</span>${m.half ? `<span class="eyebrow">HZ ${m.half[0]}:${m.half[1]}</span>` : ''}</span>` : `<span class="mc-ko"><b>${m.timeKnown === false ? '--:--' : esc(F.time.format(new Date(m.date)))}</b><span class="eyebrow">Uhr</span></span>`}
@@ -2471,7 +2474,7 @@
     const sh = $('#sheet');
     if (sh.hidden) return;
     sh.classList.add('closing');
-    setTimeout(() => { sh.hidden = true; sh.classList.remove('closing'); if ($('#story').hidden) document.body.style.overflow = ''; }, reduce ? 0 : 260);
+    setTimeout(() => { sh.hidden = true; sh.classList.remove('closing'); $('.sheet-panel', sh).style.transform = ''; if ($('#story').hidden) document.body.style.overflow = ''; }, reduce ? 0 : 260);
   }
   function icsFor(m) {
     const t = new Date(m.date);
@@ -2592,6 +2595,8 @@
     });
     const ind = $('#tabbar .tab-ind');
     if (ind) ind.style.transform = `translateX(${i * 100}%)`;
+    if (ind && S.tabI != null && S.tabI !== i && !reduce) { ind.classList.remove('stretch'); void ind.offsetWidth; ind.classList.add('stretch'); }
+    S.tabI = i;
   }
   function countUps(root) {
     if (reduce) return;
@@ -2637,8 +2642,18 @@
     t.ready.catch(() => {});
     t.finished.finally(() => { imgEl.style.viewTransitionName = ''; });
   }
+  // Haptik: iOS 18+ gibt beim Umschalten eines Schalters ein kurzes Tick - ein unsichtbarer Schalter macht das nutzbar
+  const hapLabel = document.createElement('label');
+  hapLabel.className = 'hap';
+  hapLabel.setAttribute('aria-hidden', 'true');
+  hapLabel.innerHTML = '<input type="checkbox" switch tabindex="-1">';
+  document.body.appendChild(hapLabel);
+  const haptic = () => { try { hapLabel.click(); } catch (err) { /* kein Haptik-Support */ } };
+  const HAPTIC = '.tab, .seg a, .tabs a, .chips button, .sw, .set-seg button, [data-action="fav"], [data-action="tip-step"], [data-action="tip-save"], [data-action="slot"], [data-action="pick"], [data-action="story-next"], [data-action="story-prev"]';
   document.addEventListener('click', (e) => {
-    if (e.target.closest('[data-close]')) { closeSheet(); return; }
+    if (e.target === hapLabel || hapLabel.contains(e.target)) return;
+    if (e.target.closest(HAPTIC)) haptic();
+    if (e.target.closest('[data-close]')) { if (S.noClose && Date.now() - S.noClose < 450) return; closeSheet(); return; }
     const vt = e.target.closest('a[data-vt="player"]');
     if (vt && !e.metaKey && !e.ctrlKey && document.startViewTransition && !reduce) {
       const im = $('.pc-media img', vt);
@@ -2764,6 +2779,47 @@
   document.addEventListener('change', (e) => {
     if (e.target && e.target.dataset && e.target.dataset.set === 'name') toast(userName() ? `Hallo ${userName()}!` : 'Name entfernt – die App sagt jetzt „Borusse“');
   });
+
+  // Licht beim Antippen: kurzer Flutlicht-Schein an der Fingerspitze
+  document.addEventListener('pointerdown', (e) => {
+    if (reduce || e.button > 0 || !e.target.closest || !e.target.closest('a, button, [data-action], .tile, .pc, .ticket')) return;
+    const g = document.createElement('i');
+    g.className = 'tglow';
+    g.style.left = e.clientX + 'px';
+    g.style.top = e.clientY + 'px';
+    document.body.appendChild(g);
+    setTimeout(() => g.remove(), 700);
+  }, { passive: true });
+
+  // Sheet: am Griff nach unten ziehen zum Schliessen
+  (() => {
+    let d = null;
+    document.addEventListener('pointerdown', (e) => {
+      const g = e.target.closest && e.target.closest('.sheet-grip');
+      if (!g || e.button > 0) return;
+      d = { panel: g.closest('.sheet-panel'), y0: e.clientY, dy: 0, t0: Date.now() };
+      d.panel.classList.add('drag');
+      try { g.setPointerCapture(e.pointerId); } catch (err) { /* aeltere Browser */ }
+    });
+    document.addEventListener('pointermove', (e) => {
+      if (!d) return;
+      d.dy = Math.max(0, e.clientY - d.y0);
+      d.panel.style.transform = d.dy ? `translateY(${d.dy}px)` : '';
+    });
+    const end = () => {
+      if (!d) return;
+      const { panel, dy, t0 } = d;
+      d = null;
+      panel.classList.remove('drag');
+      if (dy > 6) S.noClose = Date.now();
+      if (dy > 110 || (dy > 40 && Date.now() - t0 < 260)) { closeSheet(); return; }
+      panel.classList.add('snap');
+      panel.style.transform = '';
+      setTimeout(() => panel.classList.remove('snap'), 380);
+    };
+    document.addEventListener('pointerup', end);
+    document.addEventListener('pointercancel', end);
+  })();
 
   // Startseite sortieren: Griff gedrueckt halten und ziehen
   (() => {
