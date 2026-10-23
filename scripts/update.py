@@ -5,7 +5,7 @@ Laeuft 3x taeglich auf GitHub Actions (kostenlos) und braucht nur die
 Python-Standardbibliothek. Holt:
   * Kader, Vertraege, Verletzungen, Statistiken,
     Transfers und Geruechtekueche von Transfermarkt
-  * Spiele, Live-Ergebnisse und Tabellen von OpenLigaDB
+  * Spiele, Live-Ergebnisse und Tabellen von OpenLigaDB (Champions-League-Tabelle von ESPN)
   * Transfer-Schlagzeilen ueber Google News
 und laesst die Schlagzeilen von der kostenlosen Gemini-KI auswerten
 (Here we go / Geruecht / Abloese / Boni / Quelle).
@@ -484,156 +484,6 @@ def parse_transfers(page):
     return res
 
 
-def parse_rumors(page):
-    items = []
-    for t in items_tables(page):
-        names = header_names(t)
-        for row in body_rows(t):
-            cs = cells(row)
-            rec = None
-            for i, (a, inner) in enumerate(cs):
-                col = names[i] if i < len(names) else ''
-                if 'profil/spieler' in inner and rec is None:
-                    rec = player_cell(inner)
-                elif rec is None:
-                    continue
-                elif col.startswith('Nat'):
-                    rec['flags'] = flags_of(inner)
-                elif col == 'Alter':
-                    rec['age'] = int(text(inner)) if text(inner).isdigit() else None
-                elif col == 'Verein':
-                    rec['club'] = club_cell(inner)
-                elif col == 'Marktwert':
-                    rec['value'] = money(inner)
-                elif col.startswith('Letzte'):
-                    rec['lastSource'] = de_date(text(inner))
-                    u = re.search(r'href="([^"]+)"', inner)
-                    rec['url'] = html.unescape(u.group(1)) if u else None
-                elif col == 'Wertung':
-                    p = re.search(r'(\d+)\s*%', text(inner))
-                    rec['probability'] = int(p.group(1)) if p else None
-                    rec['trend'] = 'up' if 'green-arrow' in inner else 'down' if 'red-arrow' in inner else None
-            if rec:
-                items.append(rec)
-    return items
-
-
-def parse_fixtures_tm(page):
-    """Spielplan einer Mannschaft (fuer BVB II, das nicht in OpenLigaDB ist)."""
-    matches = []
-    for m in re.finditer(r'<div class="responsive-table">', page):
-        block = balanced(page, m.start(), 'div')
-        if 'ergebnis-link' not in block:
-            continue
-        before = page[max(0, m.start() - 2500):m.start()]
-        comps = re.findall(r'<img[^>]*src="[^"]*/logo/[^"]*"[^>]*title="([^"]+)"', before)
-        comp = html.unescape(comps[-1]) if comps else 'Liga'
-        for row in re.findall(r'<tr>(.*?)</tr>', block, re.S):
-            cs = cells(row)
-            if len(cs) < 5:
-                continue
-            texts = [text(c[1]) for c in cs]
-            date = next((de_date(t) for t in texts if re.search(r'\d{2}\.\d{2}\.\d{4}', t)), None)
-            if not date:
-                continue
-            hhmm = next((t for t in texts if re.fullmatch(r'\d{1,2}:\d{2}', t)), None)
-            venue = next((t for t in texts if t in ('H', 'A')), 'H')
-            opp, opp_icon = None, None
-            for a, inner in cs:
-                om = re.search(r'title="([^"]+)" href="/[^"]+/startseite/verein/(\d+)', inner)
-                if om and 'hauptlink' in a:
-                    opp = {'name': html.unescape(om.group(1)), 'id': om.group(2), 'icon': crest(om.group(2))}
-            if not opp:
-                continue
-            res = re.search(r'class="ergebnis-link"[^>]*>\s*<span class="([^"]*)">\s*([^<]+?)\s*</span>', row)
-            score, outcome = None, None
-            if res:
-                sm = re.match(r'(\d+):(\d+)', res.group(2))
-                if sm:
-                    score = [int(sm.group(1)), int(sm.group(2))]
-                    outcome = 'W' if 'greentext' in res.group(1) else 'L' if 'redtext' in res.group(1) else 'D'
-            me = {'name': 'Borussia Dortmund II', 'short': 'BVB II', 'icon': crest(17), 'id': '17'}
-            home, away = (me, opp) if venue == 'H' else (opp, me)
-            matches.append({
-                'id': 'tm-%s-%s' % (date, opp['id']), 'comp': comp, 'round': texts[0] or None,
-                'date': berlin_to_utc(date, hhmm), 'timeKnown': bool(hhmm),
-                'home': home, 'away': away, 'isHome': venue == 'H',
-                'finished': score is not None, 'score': score, 'outcome': outcome, 'goals': []})
-    matches.sort(key=lambda x: x['date'])
-    tab = re.search(r'/wettbewerb/([A-Z0-9]+)/saison_id/\d+/spieltag', page)
-    return matches, (tab.group(1) if tab else None)
-
-
-def parse_table_tm(page, bvb_id='17'):
-    tables = items_tables(page)
-    if not tables:
-        return []
-    rows = []
-    tb = tables[0]
-    body = tb[tb.find('<tbody'):] if '<tbody' in tb else tb
-    for row in re.findall(r'<tr[^>]*>(.*?)</tr>', body, re.S):
-        cs = cells(row)
-        name_i = None
-        for i, (a, inner) in enumerate(cs):
-            if 'hauptlink' in a and re.search(r'/verein/\d+', inner):
-                name_i = i
-                break
-        if name_i is None:
-            continue
-        cm = re.search(r'title="([^"]+)" href="/[^"]+/verein/(\d+)', cs[name_i][1]) or \
-            re.search(r'href="/[^"]+/verein/(\d+)[^"]*"[^>]*title="([^"]+)"', cs[name_i][1])
-        if not cm:
-            continue
-        if cm.re.pattern.startswith('title'):
-            name, cid = cm.group(1), cm.group(2)
-        else:
-            cid, name = cm.group(1), cm.group(2)
-        nums = [text(c[1]) for c in cs[name_i + 1:]]
-        pos = (re.findall(r'\d+', text(cs[0][1])) or [str(len(rows) + 1)])[0]
-        try:
-            gf, ga = (int(x) for x in nums[4].split(':'))
-            rows.append({'pos': int(pos), 'team': html.unescape(name), 'icon': crest(cid), 'id': cid,
-                         'played': int(nums[0]), 'won': int(nums[1]), 'draw': int(nums[2]),
-                         'lost': int(nums[3]), 'goals': gf, 'against': ga, 'diff': gf - ga,
-                         'points': int(nums[6]), 'isBVB': cid == bvb_id})
-        except (ValueError, IndexError):
-            continue
-    return rows
-
-
-def tm_search(query):
-    """Spieler und Vereine in der Transfermarkt-Schnellsuche finden."""
-    page = tm_get('/schnellsuche/ergebnis/schnellsuche?query=' + urllib.parse.quote(query))
-    res = {'player': None, 'club': None}
-    for t in items_tables(page):
-        names = header_names(t)
-        hdr = ' '.join(names)
-        rows = body_rows(t)
-        if not rows:
-            continue
-        cs = cells(rows[0])
-        inner = rows[0]
-        if 'profil/spieler' in inner and res['player'] is None:
-            p = player_cell(inner) or {}
-            for i, (a, c) in enumerate(cs):
-                col = names[i] if i < len(names) else ''
-                if col == 'Verein' or ('verein/' in c and 'profil/spieler' not in c and not p.get('club')):
-                    cc = club_cell(c)
-                    if cc:
-                        p['club'] = cc
-                elif col == 'Alter':
-                    p['age'] = int(text(c)) if text(c).isdigit() else None
-                elif col == 'Marktwert':
-                    p['value'] = money(c)
-            res['player'] = p
-        elif 'startseite/verein' in inner and 'profil/spieler' not in inner and res['club'] is None \
-                and ('Verein' in hdr or 'Land' in hdr or True):
-            cc = club_cell(inner)
-            if cc:
-                res['club'] = cc
-    return res
-
-
 # --------------------------------------------------------------------------- Module
 def mod_squads(state):
     prev = load('squads.json', {}) or {}
@@ -749,25 +599,6 @@ def mod_transfers(state):
     return {'ok': True, 'count': len(t['in']) + len(t['out'])}
 
 
-def mod_rumors(state):
-    prev = load('rumors.json', {}) or {}
-    page = tm_get('/x/geruechte/verein/16')
-    items = parse_rumors(page)
-    if not items and 'Gerüchte' not in page:
-        raise RuntimeError(page_hint(page, 'Gerüchteliste nicht gefunden'))
-    old = {x['id']: x for x in prev.get('items', [])}
-    if old:
-        for x in items:
-            o = old.get(x['id'])
-            if not o:
-                state['changes'].add('rumors', 'Neues Gerücht: %s (%s)' % (x['name'], (x.get('club') or {}).get('name', '?')))
-            elif o.get('probability') is not None and x.get('probability') is not None and \
-                    abs(o['probability'] - x['probability']) >= 10:
-                state['changes'].add('rumors', 'Wahrscheinlichkeit %s: %d%% → %d%%' % (x['name'], o['probability'], x['probability']))
-    save('rumors.json', {'updatedAt': iso(NOW), 'items': items})
-    return {'ok': True, 'count': len(items)}
-
-
 def pick_leagues():
     """Findet automatisch die richtigen OpenLigaDB-Wettbewerbe der aktuellen Saison."""
     leagues = oldb('/getavailableleagues')
@@ -875,10 +706,43 @@ def mod_matches(state):
         tables['bl1'] = {'name': 'Bundesliga', 'rows': rows, 'updatedAt': iso(NOW)}
     except Exception as e:
         state['warnings'].append('Tabelle Bundesliga: %s' % e)
+    for key, lg, name in (('ucl', 'uefa.champions', 'Champions League · Ligaphase'), ('bl1', 'ger.1', 'Bundesliga')):
+        if key == 'bl1' and (tables.get('bl1') or {}).get('updatedAt') == iso(NOW):
+            continue  # OpenLigaDB hat geklappt - ESPN nur als Ersatz
+        try:
+            rows = espn_table(lg)
+            old_pos = next((r['pos'] for r in (tables.get(key) or {}).get('rows', []) if r.get('isBVB')), None)
+            new_pos = next((r['pos'] for r in rows if r['isBVB']), None)
+            if old_pos and new_pos and old_pos != new_pos:
+                state['changes'].add('table', '%s: BVB jetzt auf Platz %d (vorher %d)' % (name.split(' ·')[0], new_pos, old_pos))
+            tables[key] = {'name': name, 'rows': rows, 'updatedAt': iso(NOW), 'source': 'ESPN'}
+        except Exception as e:
+            state['warnings'].append('Tabelle %s (ESPN): %s' % (name, e))
     match_changes(prev.get('profis') or [], out['profis'], state)
     save('matches.json', out)
     save('tables.json', tables)
     return {'ok': True, 'count': len(profis)}
+
+
+def espn_table(lg):
+    """Tabelle von ESPN (frei abrufbar, auch von GitHub aus)."""
+    d = http_json('https://site.api.espn.com/apis/v2/sports/soccer/%s/standings' % lg, timeout=30)
+    entries = (((d.get('children') or [{}])[0].get('standings') or {}).get('entries') or [])
+    rows = []
+    for e in entries:
+        t = e.get('team') or {}
+        st = {x.get('name'): x.get('value') for x in e.get('stats') or []}
+        n = lambda k: int(st.get(k) or 0)  # noqa: E731
+        name = t.get('displayName') or '?'
+        rows.append({'pos': n('rank') or len(rows) + 1, 'team': name, 'short': t.get('shortDisplayName') or t.get('abbreviation'),
+                     'icon': (t.get('logos') or [{}])[0].get('href'), 'id': 'espn-%s' % t.get('id'),
+                     'played': n('gamesPlayed'), 'won': n('wins'), 'draw': n('ties'), 'lost': n('losses'),
+                     'goals': n('pointsFor'), 'against': n('pointsAgainst'), 'diff': n('pointDifferential'),
+                     'points': n('points'), 'isBVB': is_bvb(name)})
+    if not rows:
+        raise RuntimeError('ESPN lieferte keine Tabelle')
+    rows.sort(key=lambda r: r['pos'])
+    return rows
 
 
 def match_changes(old_list, new_list, state):
@@ -894,30 +758,6 @@ def match_changes(old_list, new_list, state):
         elif o and not m['finished'] and o.get('date') != m.get('date') and m.get('date'):
             state['changes'].add('matches', 'Neue Anstoßzeit: %s – %s' % (
                 m['home']['short'] or m['home']['name'], m['away']['short'] or m['away']['name']))
-
-
-def mod_u23(state):
-    """BVB II (Regionalliga West) - Spielplan und Tabelle von Transfermarkt (nur ausserhalb von GitHub moeglich)."""
-    prev = load('u23.json', {}) or {}
-    page = tm_get('/x/spielplan/verein/17/saison_id/%d' % SEASON)
-    u23, comp_id = parse_fixtures_tm(page)
-    if not u23:
-        raise RuntimeError(page_hint(page, 'Spielplan BVB II nicht gefunden'))
-    out = {'season': SEASON, 'updatedAt': iso(NOW), 'matches': u23, 'league': prev.get('league'),
-           'table': prev.get('table')}
-    if comp_id:
-        rows = parse_table_tm(tm_get('/x/tabelle/wettbewerb/%s/saison_id/%d' % (comp_id, SEASON)))
-        if rows:
-            league = next((m['comp'] for m in u23 if m['comp'] and 'Cup' not in m['comp']), 'Liga')
-            old_pos = next((r['pos'] for r in (prev.get('table') or {}).get('rows', []) if r.get('isBVB')), None)
-            new_pos = next((r['pos'] for r in rows if r['isBVB']), None)
-            if old_pos and new_pos and old_pos != new_pos:
-                state['changes'].add('table', '%s: BVB II jetzt auf Platz %d (vorher %d)' % (league, new_pos, old_pos))
-            out['league'] = league
-            out['table'] = {'name': league, 'rows': rows, 'updatedAt': iso(NOW)}
-    match_changes(prev.get('matches') or [], u23, state)
-    save('u23.json', out)
-    return {'ok': True, 'count': len(u23)}
 
 
 # --------------------------------------------------------------------------- Statistiken (ESPN)
@@ -959,6 +799,7 @@ def mod_stats_espn(state):
             cats = ((a.get('statistics') or {}).get('splits') or {}).get('categories') or []
             d = agg.setdefault(a['id'], {'name': a.get('fullName') or a.get('displayName'), 'jersey': a.get('jersey'),
                                          'pos': (a.get('position') or {}).get('name'), 'age': a.get('age'),
+                                         'dob': (a.get('dateOfBirth') or '')[:10],
                                          'apps': 0, 'subIn': 0, 'goals': 0, 'assists': 0, 'yellow': 0, 'red': 0,
                                          'leagues': [], 'bl': lg == 'ger.1'})
             apps = int(espn_stat(cats, 'appearances'))
@@ -1010,14 +851,25 @@ def mod_stats_espn(state):
     new = dict(old)
     changed = matched = 0
     known = {slug(p['name']) for t in (squads.get('teams') or {}).values() for p in t.get('players', [])}
-    added = []
+    added, on_roster, squad_changed = [], set(), False
     for eid, d in agg.items():
         p = match(d)
         if not p:
-            if d['bl'] and d['apps'] > 0 and slug(d['name'] or '') not in known:
+            if d['bl'] and slug(d['name'] or '') not in known:
                 added.append((eid, d))
             continue
         matched += 1
+        if d['bl']:
+            # Kader-Abgleich mit dem offiziellen Bundesliga-Kader: Rueckennummer und Geburtstag
+            on_roster.add(p['id'])
+            if d.get('jersey') and str(d['jersey']) != str(p.get('number') or ''):
+                if p.get('number'):
+                    state['changes'].add('squad', 'Neue Rückennummer: %s trägt jetzt die %s' % (p['name'], d['jersey']))
+                p['number'] = str(d['jersey'])
+                squad_changed = True
+            if d.get('dob') and not p.get('birth'):
+                p['birth'] = d['dob']
+                squad_changed = True
         o = old.get(p['id']) or {}
         rec = dict(o)
         rec.update({'apps': d['apps'], 'subIn': d['subIn'], 'goals': d['goals'], 'assists': d['assists'],
@@ -1031,17 +883,54 @@ def mod_stats_espn(state):
     if not matched:
         raise RuntimeError('ESPN-Spieler konnten dem Kader nicht zugeordnet werden')
     teams_stats['profis'] = new
-    # Neue Spieler aus dem offiziellen Bundesliga-Kader (mit Einsatz) automatisch in den App-Kader
+    # Abgaenge: wer 3 Tage hintereinander nicht mehr im offiziellen Bundesliga-Kader steht, fliegt raus.
+    # Vorsichtig: nur wenn ESPN einen vollstaendigen Kader liefert und kein aehnlicher Name/keine gleiche Nummer auftaucht.
+    roster = [d for d in agg.values() if d['bl']]
+    if len(roster) >= 20:
+        tokens = {t for d in roster for t in slug(d['name'] or '').split('-') if len(t) > 2}
+        jerseys = {str(d['jersey']) for d in roster if d.get('jersey')}
+        recent = (NOW - timedelta(days=30)).strftime('%Y-%m-%d')
+        for p in list(players):
+            if p['id'] in on_roster:
+                if p.pop('espnMiss', None):
+                    squad_changed = True
+                continue
+            if ((p.get('joined') or '') >= recent or set(slug(p['name']).split('-')) & tokens
+                    or str(p.get('number') or '-') in jerseys):
+                continue
+            miss = p.get('espnMiss') or {'n': 0, 'd': ''}
+            if miss['d'] != TODAY:
+                miss = {'n': miss['n'] + 1, 'd': TODAY}
+            p['espnMiss'] = miss
+            squad_changed = True
+            if miss['n'] >= 3:
+                players.remove(p)
+                state['changes'].add('squad', 'Nicht mehr im Kader: %s (nicht mehr im offiziellen Bundesliga-Kader)' % p['name'])
+    # Neue Spieler aus dem offiziellen Bundesliga-Kader automatisch in den App-Kader
     for eid, d in added:
         pid = 'espn-%s' % eid
         players.append({'id': pid, 'name': d['name'], 'img': 'https://a.espncdn.com/i/headshots/soccer/players/full/%s.png' % eid,
                         'position': d['pos'] or 'Spieler', 'group': espn_group(d['pos']), 'number': str(d['jersey']) if d.get('jersey') else None,
-                        'captain': False, 'absences': [], 'age': d.get('age'), 'value': None, 'joined': TODAY,
+                        'captain': False, 'absences': [], 'age': d.get('age'), 'birth': d.get('dob') or None, 'joined': TODAY,
                         'aiAdded': 'laut offiziellem Bundesliga-Kader (ESPN)'})
         new[pid] = {'apps': d['apps'], 'subIn': d['subIn'], 'goals': d['goals'], 'assists': d['assists'],
                     'yellow': d['yellow'], 'red': d['red'], 'minutes': (mins.get('byId') or {}).get(eid, 0)}
         state['changes'].add('squad', 'Neu im Kader: %s (offizieller Bundesliga-Kader)' % d['name'])
-    if added:
+    # Alter aus dem Geburtstag immer neu berechnen (alle Teams)
+    for t in (squads.get('teams') or {}).values():
+        for q in t.get('players', []):
+            b = re.match(r'(\d{4})-(\d{2})-(\d{2})', q.get('birth') or '')
+            if b:
+                y, mo, dd = int(b.group(1)), int(b.group(2)), int(b.group(3))
+                age = NOW.year - y - ((NOW.month, NOW.day) < (mo, dd))
+                if q.get('age') != age:
+                    q['age'] = age
+                    squad_changed = True
+        ages = [q['age'] for q in t.get('players', []) if q.get('age')]
+        if ages and t.get('avgAge') != round(sum(ages) / len(ages), 1):
+            t['avgAge'] = round(sum(ages) / len(ages), 1)
+            squad_changed = True
+    if added or squad_changed:
         pro['count'] = len(players)
         save('squads.json', squads)
     out = dict(prev)
@@ -1060,6 +949,8 @@ NEWS_QUERIES = [
     ('BVB Verletzung', 'de'), ('BVB Training Rückkehr', 'de'), ('Borussia Dortmund', 'de'),
     ('Borussia Dortmund transfer', 'en'), ('Dortmund Fabrizio Romano', 'en'),
     ('Dortmund "here we go"', 'en'), ('BVB Vertragsverlängerung', 'de'),
+    ('BVB Gerücht', 'de'), ('BVB Interesse', 'de'), ('BVB Angebot', 'de'), ('BVB verlängert', 'de'),
+    ('BVB Neuzugang', 'de'), ('BVB Abgang', 'de'), ('Dortmund linked', 'en'), ('Dortmund contract extension', 'en'),
 ]
 
 
@@ -1218,7 +1109,7 @@ def build_prompt(headlines, squads, stories, grounded):
     known = [{'key': s['key'], 'player': s['player'], 'direction': s['direction'],
               'status': s['status'], 'otherClub': (s.get('otherClub') or {}).get('name')}
              for s in stories[:40]]
-    lines = ['%d | %s | %s | %s' % (i, h['date'][:10], h['outlet'], h['title']) for i, h in enumerate(headlines[:90])]
+    lines = ['%d | %s | %s | %s' % (i, h['date'][:10], h['outlet'], h['title']) for i, h in enumerate(headlines[:120])]
     task = (
         'Du bist der Transfer-Redakteur einer Borussia-Dortmund-Fan-App. Heute ist %s.\n\n'
         'AUFGABE: Finde alle aktuellen Transfer-Storys rund um Borussia Dortmund (Profis, BVB II, U19, '
@@ -1247,9 +1138,10 @@ def build_prompt(headlines, squads, stories, grounded):
         'official/herewego/extension = 100, denied = 0.\n'
         'Wenn eine Story schon bekannt ist (Liste unten), verwende denselben key und aktualisiere sie.\n\n'
         'ZUSÄTZLICH:\n'
-        '1) "injuries": Verletzungs- und Fitness-News zu BVB-Spielern der letzten 7 Tage aus den Quellen oben '
+        '1) "injuries": Verletzungs-, Fitness- und Sperren-News zu BVB-Spielern der letzten 7 Tage aus den Quellen oben '
         '(neue Verletzung, voraussichtliche Rückkehr, zurück im Training, wieder fit, fraglich fürs nächste Spiel). '
-        'status: "injured" (fällt aus), "doubtful" (fraglich), "back" (zurück im Training), "fit" (wieder voll einsatzfähig). '
+        'status: "injured" (fällt aus), "doubtful" (fraglich), "back" (zurück im Training), "fit" (wieder voll einsatzfähig), '
+        '"suspended" (gesperrt, z. B. Rot- oder Gelbsperre - im text steht wofür und für wie viele Spiele). '
         'WICHTIG: Nur Infos, die wirklich in den Schlagzeilen bzw. der Suche stehen. Die Transfermarkt-Liste unten ist nur zur '
         'Orientierung - wiederhole sie NICHT. Gibt es keine neuen Meldungen, gib eine leere Liste zurück.\n'
         '2) "briefing": 3-4 kurze, sachliche Sätze auf Deutsch mit den wichtigsten BVB-News des Tages '
@@ -1261,7 +1153,7 @@ def build_prompt(headlines, squads, stories, grounded):
         '"fee":"z.B. 30 Mio. € oder null","feeValue":30000000,"bonus":"z.B. 5 Mio. € Boni oder null",'
         '"contractUntil":"2031 oder null","loan":false,"source":"Journalist oder Medium (Original)",'
         '"tier":1,"probability":40,"summary":"1-2 Sätze auf Deutsch, sachlich","date":"YYYY-MM-DD","headlines":[0,3]}],'
-        '"injuries":[{"player":"Vorname Nachname","status":"injured|doubtful|back|fit",'
+        '"injuries":[{"player":"Vorname Nachname","status":"injured|doubtful|back|fit|suspended",'
         '"text":"kurz auf Deutsch, z.B. Muskelfaserriss, fällt ca. 3 Wochen aus","expectedReturn":"z.B. Mitte November oder null",'
         '"source":"Medium","date":"YYYY-MM-DD"}],'
         '"briefing":"..."}\n'
@@ -1298,7 +1190,7 @@ def mod_news(state):
         gem['error'] = 'Kein GEMINI_API_KEY gesetzt'
     else:
         models = gemini_models(key)
-        candidates = ([h for h in headlines_all if bvb_re.search(h['title'])] or headlines_all)[:90]
+        candidates = ([h for h in headlines_all if bvb_re.search(h['title'])] or headlines_all)[:120]
         attempts = []
         gem['attempts'] = attempts
         pg = prev.get('gemini') or {}
@@ -1422,7 +1314,8 @@ def merge_stories(stories, found, headlines, state):
     return stories
 
 
-INJ_LABEL = {'injured': 'fällt aus', 'doubtful': 'fraglich', 'back': 'zurück im Training', 'fit': 'wieder fit'}
+INJ_LABEL = {'injured': 'fällt aus', 'doubtful': 'fraglich', 'back': 'zurück im Training', 'fit': 'wieder fit',
+             'suspended': 'gesperrt'}
 
 
 def merge_injuries(current, found, state):
@@ -1619,8 +1512,6 @@ MODULES = [
     ('squads', 'Kader & Verträge (Transfermarkt)', mod_squads, 'pc'),
     ('stats', 'Statistiken (Transfermarkt)', mod_stats, 'pc'),
     ('transfers', 'Transferbilanz (Transfermarkt)', mod_transfers, 'pc'),
-    ('rumors', 'Gerüchteküche (Transfermarkt)', mod_rumors, 'pc'),
-    ('u23', 'BVB II Spiele & Tabelle (Transfermarkt)', mod_u23, 'pc'),
 ]
 
 

@@ -1,5 +1,5 @@
 /* BVB 09 – Service Worker: App offline verfuegbar, Daten immer frisch */
-const SHELL = 'bvb09-shell-v5';
+const SHELL = 'bvb09-shell-v6';
 const IMG = 'bvb09-img-v1';
 const FILES = ['./', 'index.html', 'app.css', 'app.js', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 
@@ -58,7 +58,7 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(cacheFirst(req, SHELL));
     return;
   }
-  if (/transfermarkt\.technology$|akamaized\.net$|wikimedia\.org$|imgur\.com$|dfb\.de$|thesportsdb\.com$/.test(url.hostname)) {
+  if (/transfermarkt\.technology$|akamaized\.net$|wikimedia\.org$|imgur\.com$|dfb\.de$|thesportsdb\.com$|espncdn\.com$/.test(url.hostname)) {
     e.respondWith(cacheFirst(req, IMG, 600));
   }
   // OpenLigaDB-Live-Daten und alles andere: immer direkt aus dem Netz

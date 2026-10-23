@@ -4,7 +4,7 @@
 'use strict';
 (() => {
   const REPO = 'sneaxx141108-gif/bvb09';
-  const FILES = ['status', 'status-pc', 'squads', 'stats', 'transfers', 'rumors', 'news', 'matches', 'tables', 'u23'];
+  const FILES = ['status', 'status-pc', 'squads', 'stats', 'transfers', 'news', 'matches', 'tables'];
   const TZ = 'Europe/Berlin';
   const BVB = { name: 'Borussia Dortmund', crest: 'https://tmssl.akamaized.net/images/wappen/head/16.png' };
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -163,7 +163,7 @@
   const findPlayer = (k, id) => (team(k).players || []).find((p) => p.id === id);
   const playerByName = (name) => { const s = slug(name); return allPlayers().find((p) => slug(p.name) === s) || null; };
   function withLive(m) { const l = S.live[m.id]; return l ? Object.assign({}, m, l) : m; }
-  const matchList = (k) => (k === 'u23' ? ((D.u23 || {}).matches || (D.matches || {}).u23 || []) : ((D.matches || {}).profis || [])).map(withLive);
+  const matchList = () => ((D.matches || {}).profis || []).map(withLive);
   function isLive(m) {
     if (m.finished) return false;
     const t = Date.parse(m.date);
@@ -213,12 +213,15 @@
     return g > (st.goals || 0) ? Object.assign({}, st, { goals: g }) : st;
   }
   function absencesOf(p) {
-    const base = (p.absences || []).slice();
+    // Sperren und fehlende Spielberechtigungen mit "bis TT.MM.JJJJ" laufen von selbst ab
+    const today = berlinYMD(new Date());
+    const base = (p.absences || []).filter((a) => { const m = /bis (\d{2})\.(\d{2})\.(\d{4})/.exec(a.text || ''); return !m || `${m[3]}-${m[2]}-${m[1]}` >= today; });
     const tmDate = ((D['status-pc'] || {}).lastRun || (D.squads || {}).updatedAt || '').slice(0, 10);
     const news = ((D.news || {}).injuryNews || []).filter((n) => slug(n.player) === slug(p.name)).sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
     if (!news || String(news.date) < tmDate) return base;
     if (news.status === 'fit' || news.status === 'back') return base.filter((a) => a.type === 'ineligible');
     if (news.status === 'injured' && !base.some((a) => a.type === 'injury')) base.push({ type: 'injury', text: (news.text || 'verletzt') + (news.source ? ` (laut ${news.source})` : ''), ai: true });
+    if (news.status === 'suspended' && !base.some((a) => a.type === 'suspension')) base.push({ type: 'suspension', text: (news.text || 'gesperrt') + (news.source ? ` (laut ${news.source})` : ''), ai: true });
     return base;
   }
   const isOut = (p) => absencesOf(p).some((a) => a.type !== 'ineligible');
@@ -276,17 +279,6 @@
           playerId: t.id, team: sp && sp.team, number: sp && sp.number,
         });
       }
-    }
-    const staleBefore = berlinYMD(new Date(Date.now() - 30 * 864e5));
-    for (const r of (D.rumors || {}).items || []) {
-      const key = slug(r.name) + '|in';
-      if (seen.has(key) || (r.lastSource && r.lastSource < staleBefore)) continue;
-      seen.add(key);
-      out.push({
-        key, kind: 'rumor', status: 'rumor', dir: 'in', name: r.name, img: pimg(r.img, 'big'), age: r.age, position: r.position,
-        flags: r.flags, from: r.club, to: BVB, probability: r.probability, trend: r.trend,
-        source: 'TM-Gerüchteküche', tier: 2, date: r.lastSource, url: r.url, playerId: r.id,
-      });
     }
     out.sort((a, b) => String(b.date || '0').localeCompare(String(a.date || '0')));
     S._feed = out;
@@ -719,11 +711,10 @@
     const marq = '<span>BORUSSIA DORTMUND · SÜDTRIBÜNE · BVB 09 · </span>';
     const tickets = TM_PAGES.map(([k, name, sub, wm, url], i) => {
       const t = team(k);
-      const league = k === 'u23' ? ((D.u23 || {}).league || sub) : sub;
       return `<a class="tmp${i === 0 ? ' gold' : ''}" href="${url}" target="_blank" rel="noopener" style="--d:${(i * 1.6).toFixed(1)}s" aria-label="${name} auf Transfermarkt öffnen">
         <span class="tmp-wm" aria-hidden="true">${wm}</span>
         <span class="tmp-stub" aria-hidden="true"><img src="${BVB.crest}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"></span>
-        <span class="tmp-txt"><b>${name}</b><span>${esc(league)}</span>${t.count ? `<span class="tmp-v">${t.count} Spieler</span>` : ''}</span>
+        <span class="tmp-txt"><b>${name}</b><span>${esc(sub)}</span>${t.count ? `<span class="tmp-v">${t.count} Spieler</span>` : ''}</span>
         <span class="tmp-go" aria-hidden="true">${I.ext}</span>
       </a>`;
     }).join('');
@@ -812,9 +803,9 @@
     UI.spieleTeam = k;
     const ms = matchList(k);
     const fm = formOf(k);
-    const sw = seg('spiele-team', [['profis', 'Profis', `#/spiele/profis/${tab}`], ['u23', 'BVB II', `#/spiele/u23/${tab}`]], k, 'sm');
-    let out = pageHead('Spie<em>le</em>', k === 'u23' ? esc(((D.u23 || {}).league) || 'Regionalliga West') : 'Liga · Pokal · Europa', `<div style="width:176px;flex:none">${sw}</div>`);
-    out += `<nav class="tabs" aria-label="Ansicht">${[['kommend', 'Kommende'], ['ergebnisse', 'Ergebnisse'], ['tabelle', 'Tabelle'], ['torschuetzen', 'Torschützen']].map(([t, l]) => `<a href="#/spiele/${k}/${t}" class="${t === tab ? 'on' : ''}">${l}</a>`).join('')}</nav>`;
+    let out = pageHead('Spie<em>le</em>', 'Liga · Pokal · Europa');
+    const tabOn = tab === 'cltabelle' ? 'tabelle' : tab;
+    out += `<nav class="tabs" aria-label="Ansicht">${[['kommend', 'Kommende'], ['ergebnisse', 'Ergebnisse'], ['tabelle', 'Tabelle'], ['torschuetzen', 'Torschützen']].map(([t, l]) => `<a href="#/spiele/${k}/${t}" class="${t === tabOn ? 'on' : ''}">${l}</a>`).join('')}</nav>`;
     if (tab === 'kommend' || tab === 'ergebnisse') {
       const w = fm.filter((x) => x === 'W').length;
       const d = fm.filter((x) => x === 'D').length;
@@ -826,8 +817,10 @@
     } else if (tab === 'ergebnisse') {
       const fin = ms.filter((m) => m.finished && m.score).reverse();
       out += `<div class="stagger" style="display:flex;flex-direction:column;gap:12px;margin-top:14px">${fin.length ? fin.map((m) => ticket(m, k, false)).join('') : '<div class="empty">Noch keine Ergebnisse.</div>'}</div>`;
-    } else if (tab === 'tabelle') {
-      out += tableView(k === 'u23' ? 'u23' : 'bl1');
+    } else if (tab === 'tabelle' || tab === 'cltabelle') {
+      const key = tab === 'cltabelle' ? 'ucl' : 'bl1';
+      out += `<div style="margin-top:14px">${seg('tabelle', [['bl1', 'Bundesliga', '#/spiele/profis/tabelle'], ['ucl', 'Champions League', '#/spiele/profis/cltabelle']], key, 'sm')}</div>`;
+      out += tableView(key);
     } else {
       out += scorerView(k);
     }
@@ -851,15 +844,17 @@
     </button>`;
   }
   function tableView(key) {
-    const t = key === 'u23' ? ((D.u23 || {}).table || (D.tables || {}).u23) : (D.tables || {})[key];
+    const t = (D.tables || {})[key];
     if (!t || !t.rows || !t.rows.length) return '<div class="empty" style="margin-top:14px">Tabelle noch nicht verfügbar.</div>';
     const n = t.rows.length;
-    const zone = (p) => (key !== 'bl1' ? '' : p <= 4 ? 'z-cl' : p === 5 ? 'z-el' : p === 6 ? 'z-ecl' : p === n - 2 ? 'z-rel' : p > n - 2 ? 'z-ab' : '');
+    const zone = (p) => (key === 'ucl' ? (p <= 8 ? 'z-cl' : p <= 24 ? 'z-el' : 'z-ab')
+      : p <= 4 ? 'z-cl' : p === 5 ? 'z-el' : p === 6 ? 'z-ecl' : p === n - 2 ? 'z-rel' : p > n - 2 ? 'z-ab' : '');
     return `<p class="faint" style="font-size:12px;margin:14px 2px 8px;font-weight:600">${esc(t.name || '')}${t.updatedAt ? ' · Stand ' + esc(rel(t.updatedAt)) : ''}</p>
       <div class="card" style="padding:6px 8px"><table class="table"><thead><tr><th>#</th><th>Verein</th><th>Sp</th><th>TD</th><th>Pkt</th></tr></thead><tbody>
       ${t.rows.map((r) => `<tr class="${r.isBVB ? 'me' : ''}"><td><span class="zone ${zone(r.pos)}"></span>${r.pos}</td><td><span class="tm">${crest({ name: r.team, icon: r.icon }, 'crest xs')}<span>${esc(r.short || r.team)}</span></span></td><td>${r.played}</td><td>${r.diff > 0 ? '+' : ''}${r.diff}</td><td>${r.points}</td></tr>`).join('')}
       </tbody></table></div>
-      ${key === 'bl1' ? '<p class="faint" style="font-size:11px;margin-top:10px;line-height:2;font-weight:600"><span class="zone z-cl"></span>Champions League &nbsp; <span class="zone z-el"></span>Europa League &nbsp; <span class="zone z-ecl"></span>Conference League &nbsp; <span class="zone z-rel"></span>Relegation &nbsp; <span class="zone z-ab"></span>Abstieg</p>' : ''}`;
+      ${key === 'bl1' ? '<p class="faint" style="font-size:11px;margin-top:10px;line-height:2;font-weight:600"><span class="zone z-cl"></span>Champions League &nbsp; <span class="zone z-el"></span>Europa League &nbsp; <span class="zone z-ecl"></span>Conference League &nbsp; <span class="zone z-rel"></span>Relegation &nbsp; <span class="zone z-ab"></span>Abstieg</p>'
+    : '<p class="faint" style="font-size:11px;margin-top:10px;line-height:2;font-weight:600"><span class="zone z-cl"></span>Achtelfinale &nbsp; <span class="zone z-el"></span>Playoffs &nbsp; <span class="zone z-ab"></span>Ausgeschieden</p>'}`;
   }
   function scorerView(k) {
     const ps = (team(k).players || []).map((p) => Object.assign({ s: statsOf(k, p.id) || {} }, p)).filter((p) => (p.s.goals || 0) + (p.s.assists || 0) > 0)
@@ -909,7 +904,7 @@
       <span class="pc-body"><span class="pc-name">${esc(p.name)}${p.captain ? ' <span class="yellow">©</span>' : ''}</span><span class="pc-pos">${esc(p.position || '')}${p.age ? ' · ' + p.age + ' J.' : ''}</span><span class="pc-val">${esc(line)}</span></span>
     </a>`;
   }
-  const INJ = { injured: 'Fällt aus:', doubtful: 'Fraglich:', back: 'Zurück im Training:', fit: 'Wieder fit:' };
+  const INJ = { injured: 'Fällt aus:', doubtful: 'Fraglich:', back: 'Zurück im Training:', fit: 'Wieder fit:', suspended: 'Gesperrt:' };
   function vSpieler(k, id) {
     const p = findPlayer(k, id);
     if (!p) return pageHead('Spieler', '', '', '#/kader/' + k) + '<div class="empty">Spieler nicht gefunden.</div>';
@@ -1197,9 +1192,9 @@
   function vInfo() {
     return pageHead('Über die <em>App</em>', 'Quellen & Hinweise', '', '#/mehr') + `<section class="card" style="display:flex;flex-direction:column;gap:12px;font-size:13px;line-height:1.6">
       <p><b>BVB 09</b> ist eine inoffizielle Fan-App und nicht mit Borussia Dortmund verbunden. Namen, Wappen und Fotos gehören den jeweiligen Rechteinhabern.</p>
-      <p><b>So bleibt alles aktuell:</b> Jeden Tag um 8:17, 14:17 und 20:17 Uhr läuft ein Programm auf GitHub. Es holt Spiele und Tabellen von OpenLigaDB und Schlagzeilen über Google News. Die kostenlose <b>Gemini-KI</b> macht daraus Here-we-go-Karten, Verletzungs-News, Vertragsverlängerungen und das KI-Briefing. Statistiken kommen von ESPN, Tore zählt die App live aus den Spielberichten. Marktwerte gibt es direkt bei Transfermarkt (Transfers → TM).</p>
-      <p><b>Transfermarkt</b> sperrt Server mit einem Bot-Schutz. Kader, Verträge und Statistiken stammen daher vom letzten direkten Abruf und werden über die KI-News ergänzt.</p>
-      <p><b>Gerüchte-Ampel:</b> grün = sehr verlässlich (z. B. Fabrizio Romano, Sky, kicker, Ruhr Nachrichten), gelb = meist verlässlich (z. B. Bild, Sport1, Transfermarkt-Gerüchteküche). Alles andere wird gar nicht angezeigt.</p>
+      <p><b>So bleibt alles aktuell:</b> Jeden Tag um 8:17, 14:17 und 20:17 Uhr läuft ein Programm auf GitHub. Es holt Spiele und die Bundesliga-Tabelle von OpenLigaDB, die Champions-League-Tabelle, Statistiken und den offiziellen Kader (Rückennummern, Zu- und Abgänge) von ESPN und Schlagzeilen über Google News. Die kostenlose <b>Gemini-KI</b> macht daraus Here-we-go-Karten, Verletzungs-News, Vertragsverlängerungen und das KI-Briefing. Statistiken kommen von ESPN, Tore zählt die App live aus den Spielberichten. Marktwerte gibt es direkt bei Transfermarkt (Transfers → TM).</p>
+      <p><b>Transfermarkt</b> sperrt Server mit einem Bot-Schutz. Positionen, Verträge sowie Kader und Statistiken von BVB II und U19 stammen daher vom letzten direkten Abruf; Verlängerungen und Wechsel ergänzt die KI aus den News.</p>
+      <p><b>Gerüchte-Ampel:</b> grün = sehr verlässlich (z. B. Fabrizio Romano, Sky, kicker, Ruhr Nachrichten), gelb = meist verlässlich (z. B. Bild, Sport1, Transfermarkt). Alles andere wird gar nicht angezeigt.</p>
       <p class="faint">Alle Angaben ohne Gewähr. KI-Zusammenfassungen können Fehler enthalten.</p>
     </section><a class="btn ghost" style="margin-top:12px" href="https://github.com/${REPO}" target="_blank" rel="noopener">${I.github} Projekt auf GitHub</a>`;
   }
@@ -1248,7 +1243,7 @@
   const ROUTES = [
     [/^\/home$/, 'home', () => vHome(), 'BVB 09'],
     [/^\/transfers(?:\/(news|tm|werte|bilanz|vertraege))?$/, 'transfers', (m) => vTransfers(m[1] || 'news'), 'Transfers'],
-    [/^\/spiele(?:\/(profis|u23))?(?:\/(kommend|ergebnisse|tabelle|torschuetzen))?$/, 'spiele', (m) => vSpiele(m[1] || UI.spieleTeam || 'profis', m[2] || 'kommend'), 'Spiele'],
+    [/^\/spiele(?:\/(profis|u23))?(?:\/(kommend|ergebnisse|tabelle|cltabelle|torschuetzen))?$/, 'spiele', (m) => vSpiele('profis', m[2] || 'kommend'), 'Spiele'],
     [/^\/kader(?:\/(profis|u23|u19))?$/, 'kader', (m) => vKader(m[1] || UI.kaderTeam || 'profis'), 'Kader'],
     [/^\/spieler\/(profis|u23|u19)\/([\w-]+)$/, 'kader', (m) => vSpieler(m[1], m[2]), (m) => ((findPlayer(m[1], m[2]) || {}).name || 'Spieler')],
     [/^\/mehr$/, 'mehr', () => vMehr(), 'Mehr'],
