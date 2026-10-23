@@ -1528,9 +1528,14 @@ def venue_for(m, venues):
 
 def weather_at(v, ko):
     """Wettervorhersage zur Anstosszeit (Open-Meteo, kostenlos, ohne Schluessel)."""
-    d = http_json('https://api.open-meteo.com/v1/forecast?' + urllib.parse.urlencode({
+    url = 'https://api.open-meteo.com/v1/forecast?' + urllib.parse.urlencode({
         'latitude': v['lat'], 'longitude': v['lon'], 'hourly': 'temperature_2m,precipitation_probability,weather_code,wind_speed_10m',
-        'timezone': 'UTC', 'forecast_days': 16}), timeout=30)
+        'timezone': 'UTC', 'forecast_days': 16})
+    try:
+        d = http_json(url, timeout=30)
+    except Exception:
+        time.sleep(3)
+        d = http_json(url, timeout=30)
     h = d.get('hourly') or {}
     hour = (ko + timedelta(minutes=30)).replace(minute=0, second=0, microsecond=0)
     key = hour.strftime('%Y-%m-%dT%H:00')
