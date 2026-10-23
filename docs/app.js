@@ -108,6 +108,7 @@
     return F.date.format(new Date(t));
   }
   const fmtDate = (s) => (s ? F.date.format(toDate(s)) : '–');
+  const UNK = 'k. A.'; // Angabe nicht sicher bekannt
   const initials = (n) => String(n || '?').split(/[\s-]+/).filter(Boolean).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
   const lastName = (n) => String(n || '').trim().split(/\s+/).slice(-1)[0];
   const isBVBName = (n) => /Borussia Dortmund$|^BVB$|^Dortmund$/.test(String(n || '').trim());
@@ -311,20 +312,23 @@
   function feeText(it) {
     if (it.feeValue) return money(it.feeValue, { short: 1 });
     if (it.fee && it.fee !== '-' && it.fee !== '?') return String(it.fee).replace(/^Leihgebühr:\s*/, '');
-    return 'k. A.';
+    return UNK;
   }
   function statsTriple(it) {
     if (it.kind === 'rumor') {
-      return `<div><span>Alter</span><b>${it.age ? esc(it.age) + ' J.' : '–'}</b></div>
+      return `<div><span>Alter</span><b>${it.age ? esc(it.age) + ' J.' : UNK}</b></div>
         <div><span>Chance</span><b class="amber">${it.probability != null ? it.probability + ' %' : '–'}</b></div>
         <div><span>Quelle</span><b>${it.date ? F.dm.format(toDate(it.date)) : '–'}</b></div>`;
     }
-    const third = it.contract ? `<div><span>Vertrag</span><b>bis ${esc(String(it.contract).slice(0, 4))}</b></div>` : `<div><span>Stand</span><b>${it.date ? F.dm.format(toDate(it.date)) : '–'}</b></div>`;
-    const second = it.probability != null && !it.bonus ? `<div><span>KI-Chance</span><b class="amber">${it.probability} %</b></div>` : `<div><span>Boni</span><b>${esc(it.bonus || 'k. A.')}</b></div>`;
+    const third = it.contract ? `<div><span>Vertrag</span><b>bis ${esc(String(it.contract).slice(0, 4))}</b></div>`
+      : it.kind === 'story' ? `<div><span>Vertrag</span><b>${UNK}</b></div>` : `<div><span>Stand</span><b>${it.date ? F.dm.format(toDate(it.date)) : UNK}</b></div>`;
+    const second = it.probability != null && !it.bonus ? `<div><span>KI-Chance</span><b class="amber">${it.probability} %</b></div>` : `<div><span>Boni</span><b>${esc(it.bonus || UNK)}</b></div>`;
     return `<div><span>${it.loan ? 'Leihgebühr' : 'Ablöse'}</span><b class="${STATUS[it.status] && STATUS[it.status].big ? 'yellow' : ''}">${esc(feeText(it))}</b></div>
       ${second}${third}`;
   }
-  const metaOf = (it) => [it.age ? it.age + ' Jahre' : '', it.position, it.flags && it.flags[0] ? it.flags[0].name : ''].filter(Boolean).join(' · ');
+  const metaOf = (it) => (it.kind === 'story'
+    ? [it.age ? it.age + ' Jahre' : `Alter ${UNK}`, it.position || `Position ${UNK}`, it.flags && it.flags[0] ? it.flags[0].name : '']
+    : [it.age ? it.age + ' Jahre' : '', it.position, it.flags && it.flags[0] ? it.flags[0].name : '']).filter(Boolean).join(' · ');
   const wordOf = (it, n) => {
     const st = STATUS[it.status] || STATUS.interest;
     return (st.big ? (it.status === 'extension' ? 'VERLÄNGERT · ' : 'HERE WE GO · ') : (it.status === 'rumor' ? 'GERÜCHT · ' : st.label.toUpperCase() + ' · ')).repeat(n);
@@ -342,7 +346,7 @@
         ${big ? `<div class="tc-stamp" aria-hidden="true">${st.stamp}</div>` : ''}
         <span class="tc-badge" style="${big ? '' : 'top:18px'}">${statusBadge(it)}</span>
         ${!big && it.probability != null ? `<div class="tc-prob">${ring(it.probability / 100, 44, 5, 'var(--warn)')}<div><b>${it.probability}%</b><span>${it.ai ? 'KI-Chance' : 'Chance'}</span></div></div>` : ''}
-        <div class="tc-flow">${crest(it.from)}<span class="tc-arrow" aria-hidden="true"></span>${crest(it.to)}<span class="sr">${esc(it.dir === 'out' ? 'Wechsel vom BVB zu ' + ((it.to || {}).name || '?') : 'Wechsel von ' + ((it.from || {}).name || '?') + ' zum BVB')}</span></div>
+        <div class="tc-flow">${crest(it.from)}<span class="tc-arrow" aria-hidden="true"></span>${crest(it.to)}<span class="sr">${esc(it.dir === 'out' ? 'Wechsel vom BVB zu ' + ((it.to || {}).name || UNK) : 'Wechsel von ' + ((it.from || {}).name || UNK) + ' zum BVB')}</span></div>
       </div>
       <div class="tc-body">
         <div>${nameHtml}<div class="tc-meta">${esc(metaOf(it))}</div></div>
@@ -745,7 +749,7 @@
     let addOut = 0;
     for (const s of (D.news || {}).stories || []) {
       if (s.status !== 'official' || !['in', 'out'].includes(s.direction) || known.has(slug(s.player))) continue;
-      const item = { name: s.player, img: (s.playerInfo || {}).img, club: s.otherClub, fee: s.fee || 'k. A.', feeValue: s.feeValue, news: s.source };
+      const item = { name: s.player, img: (s.playerInfo || {}).img, club: s.otherClub, fee: s.fee || UNK, feeValue: s.feeValue, news: s.source };
       if (s.direction === 'in') { ins.unshift(item); addIn += s.feeValue || 0; } else { outs.unshift(item); addOut += s.feeValue || 0; }
     }
     const income = (tr0.income || 0) + addOut;
@@ -756,8 +760,8 @@
     const topOut = [...outs].sort((a, b) => (b.feeValue || 0) - (a.feeValue || 0))[0];
     const loans = outs.filter((x) => x.loan);
     const row = (x, dir) => `<a class="li" ${x.id && findPlayer('profis', x.id) ? `href="#/spieler/profis/${x.id}"` : ''}>${img(pimg(x.img, 'medium'), 'avatar sm', x.name, initials(x.name))}
-      <span class="grow"><div class="t ellipsis">${esc(x.name)}${x.news ? ' <span class="chip ok sm">Neu</span>' : ''}</div><div class="s row" style="gap:6px">${crest(x.club, 'crest xs')}<span class="ellipsis">${dir === 'in' ? 'von' : 'zu'} ${esc((x.club || {}).name || '?')}${x.news ? ' · laut ' + esc(x.news) : ''}</span></div></span>
-      <span class="v ${x.feeValue ? '' : 'faint'}" style="font-weight:${x.feeValue ? 800 : 600}">${esc(x.feeValue ? money(x.feeValue, { short: 1 }) : String(x.fee || '–').replace(/^Leihgebühr:\s*/, 'Leihe '))}</span></a>`;
+      <span class="grow"><div class="t ellipsis">${esc(x.name)}${x.news ? ' <span class="chip ok sm">Neu</span>' : ''}</div><div class="s row" style="gap:6px">${crest(x.club, 'crest xs')}<span class="ellipsis">${dir === 'in' ? 'von' : 'zu'} ${esc((x.club || {}).name || UNK)}${x.news ? ' · laut ' + esc(x.news) : ''}</span></div></span>
+      <span class="v ${x.feeValue ? '' : 'faint'}" style="font-weight:${x.feeValue ? 800 : 600}">${esc(x.feeValue ? money(x.feeValue, { short: 1 }) : String(x.fee && x.fee !== '-' && x.fee !== '?' ? x.fee : UNK).replace(/^Leihgebühr:\s*/, 'Leihe '))}</span></a>`;
     let out = `<section class="card" style="margin-top:14px;display:flex;flex-direction:column;gap:14px">
       <div class="row" style="justify-content:space-between;align-items:flex-end"><span><span class="eyebrow">Einnahmen</span><div class="num green" style="font-size:30px;line-height:1.1">${countEl(income, 'moneyS')}</div><span class="faint" style="font-size:11px;font-weight:600">${outs.length} Abgänge</span></span>
       <span style="text-align:right"><span class="eyebrow">Ausgaben</span><div class="num red" style="font-size:30px;line-height:1.1">${countEl(expense, 'moneyS')}</div><span class="faint" style="font-size:11px;font-weight:600">${ins.length} Zugänge</span></span></div>
@@ -901,7 +905,7 @@
     const line = `${s.apps || 0} Sp.${s.goals ? ` · ${s.goals} ${s.goals === 1 ? 'Tor' : 'Tore'}` : ''}`;
     return `<a class="pc ${ab.length ? 'out' : ''}" href="#/spieler/${k}/${p.id}" data-vt="player">
       <span class="pc-media">${p.number ? `<span class="pc-num" aria-hidden="true">${esc(p.number)}</span>` : ''}${img(pimg(p.img, 'big'), '', p.name, initials(p.name))}${ab.length ? `<span class="pc-abs chip sm ${ab[0].type === 'injury' ? 'loss' : 'warn'}">${ab[0].type === 'injury' ? 'Verletzt' : 'Fehlt'}</span>` : ''}</span>
-      <span class="pc-body"><span class="pc-name">${esc(p.name)}${p.captain ? ' <span class="yellow">©</span>' : ''}</span><span class="pc-pos">${esc(p.position || '')}${p.age ? ' · ' + p.age + ' J.' : ''}</span><span class="pc-val">${esc(line)}</span></span>
+      <span class="pc-body"><span class="pc-name">${esc(p.name)}${p.captain ? ' <span class="yellow">©</span>' : ''}</span><span class="pc-pos">${esc(p.position || UNK)} · ${p.age || UNK} J.</span><span class="pc-val">${esc(line)}</span></span>
     </a>`;
   }
   const INJ = { injured: 'Fällt aus:', doubtful: 'Fraglich:', back: 'Zurück im Training:', fit: 'Wieder fit:', suspended: 'Gesperrt:' };
@@ -929,8 +933,8 @@
       <div class="phero-fade"></div>
       <button type="button" class="phero-back press" data-action="back" data-fallback="#/kader/${k}" aria-label="Zurück">${I.back}</button>
       <span class="phero-team">KADER · ${esc(TEAMNAME[k].toUpperCase())}</span>
-      <div class="phero-n">${p.number ? `<b>#${esc(p.number)}</b>` : ''}<span class="chip ink">${esc(p.group || '')}</span>${p.captain ? '<span class="chip ink">Kapitän</span>' : ''}</div>
-      <div class="phero-name"><h1>${esc(p.name)}</h1><span>${esc([p.position, p.age ? p.age + ' Jahre' : '', (p.flags || []).map((f) => f.name).join(' / ')].filter(Boolean).join(' · '))}</span></div>
+      <div class="phero-n"><b>#${esc(p.number || UNK)}</b><span class="chip ink">${esc(p.group || '')}</span>${p.captain ? '<span class="chip ink">Kapitän</span>' : ''}</div>
+      <div class="phero-name"><h1>${esc(p.name)}</h1><span>${esc([p.position || `Position ${UNK}`, p.age ? p.age + ' Jahre' : `Alter ${UNK}`, (p.flags || []).map((f) => f.name).join(' / ')].filter(Boolean).join(' · '))}</span></div>
     </section>`;
     out += `<section class="grid4" style="margin-top:6px">
       <div class="stat-box"><b>${st.apps || 0}</b><span>Spiele</span></div>
@@ -938,7 +942,7 @@
       <div class="stat-box"><b>${st.assists || 0}</b><span>Vorlagen</span></div>
       <div class="stat-box"><b>${st.minutes || 0}'</b><span>Minuten</span></div>
     </section>`;
-    out += contract;
+    out += contract || `<section class="card row" style="margin-top:12px;gap:12px"><span class="eyebrow grow">Vertrag bis</span><b style="font-size:18px">${UNK}</b></section>`;
     if (abs.length || injNews.length) {
       out += `<section class="sec"><div class="sec-h"><h2>Status</h2></div><div style="display:flex;flex-direction:column;gap:8px">
         ${abs.map((a) => `<div class="note-box ${a.type === 'ineligible' ? '' : 'alert'}">${a.type === 'ineligible' ? I.info : I.injury}<span>${esc(a.text)}</span></div>`).join('')}
@@ -1116,7 +1120,7 @@
     openSheet(`<h2 class="display" style="font-size:30px;text-transform:uppercase;margin-bottom:2px">${pos} wählen</h2><p class="muted" style="font-size:12px;margin-bottom:10px;font-weight:600">Passende Spieler zuerst</p>
       <div class="list">${e.s[i] ? `<button type="button" class="li" data-action="pick" data-i="${i}" data-id=""><span class="fb avatar sm">×</span><span class="grow t">Position leeren</span></button>` : ''}
       ${pros.map((p) => `<button type="button" class="li" data-action="pick" data-i="${i}" data-id="${p.id}" ${taken.has(p.id) ? 'disabled style="opacity:.35"' : ''}>
-        ${img(pimg(p.img, 'medium'), 'avatar sm', p.name, initials(p.name))}<span class="grow"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.position || '')}${p.group === grp ? ' · <span class="yellow">passt</span>' : ''}</div></span><span class="v">${apps(p)} Sp.</span></button>`).join('')}</div>`);
+        ${img(pimg(p.img, 'medium'), 'avatar sm', p.name, initials(p.name))}<span class="grow"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.position || UNK)}${p.group === grp ? ' · <span class="yellow">passt</span>' : ''}</div></span><span class="v">${apps(p)} Sp.</span></button>`).join('')}</div>`);
   }
   function vTalente() {
     const seen = new Set();
@@ -1140,7 +1144,7 @@
     }
     out += `<div class="card flat" style="margin-top:14px"><div class="list">${list.slice(0, 30).map((p, i) => `<a class="li" href="#/spieler/${p.team}/${p.id}"><span class="rank">${i + 1}</span>${img(pimg(p.img, 'medium'), 'avatar sm', p.name, initials(p.name))}
       <span class="grow" style="display:flex;flex-direction:column;gap:5px"><span class="row" style="justify-content:space-between;gap:8px"><span class="t ellipsis">${esc(p.name)}</span><span class="v">${esc(line(p))}</span></span>
-      <span class="s">${p.age} J. · ${esc(p.position || '')} · ${esc(TEAMNAME[p.team])}</span><span class="bar"><span style="width:${Math.max(2, (sOf(p).apps || 0) / mx * 100).toFixed(0)}%;animation-delay:${Math.min(i, 14) * 0.04}s"></span></span></span></a>`).join('') || '<p class="muted" style="padding:12px 0">Keine Daten.</p>'}</div></div>`;
+      <span class="s">${p.age || UNK} J. · ${esc(p.position || UNK)} · ${esc(TEAMNAME[p.team])}</span><span class="bar"><span style="width:${Math.max(2, (sOf(p).apps || 0) / mx * 100).toFixed(0)}%;animation-delay:${Math.min(i, 14) * 0.04}s"></span></span></span></a>`).join('') || '<p class="muted" style="padding:12px 0">Keine Daten.</p>'}</div></div>`;
     return out;
   }
   function vLazarett() {

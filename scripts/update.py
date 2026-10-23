@@ -775,6 +775,22 @@ def espn_stat(cats, name):
     return 0
 
 
+# Englische Positionsangaben (ESPN, TheSportsDB) auf Deutsch - Unbekanntes bleibt leer (App zeigt dann k. A.)
+POS_DE = {'goalkeeper': 'Torwart', 'centre-back': 'Innenverteidiger', 'center back': 'Innenverteidiger',
+          'centre back': 'Innenverteidiger', 'left-back': 'Linker Verteidiger', 'left back': 'Linker Verteidiger',
+          'right-back': 'Rechter Verteidiger', 'right back': 'Rechter Verteidiger', 'defender': 'Abwehrspieler',
+          'defensive midfield': 'Defensives Mittelfeld', 'central midfield': 'Zentrales Mittelfeld',
+          'attacking midfield': 'Offensives Mittelfeld', 'midfielder': 'Mittelfeldspieler',
+          'left winger': 'Linksaußen', 'left wing': 'Linksaußen', 'right winger': 'Rechtsaußen', 'right wing': 'Rechtsaußen',
+          'centre-forward': 'Mittelstürmer', 'center forward': 'Mittelstürmer', 'striker': 'Mittelstürmer',
+          'second striker': 'Hängende Spitze', 'forward': 'Stürmer'}
+
+
+def pos_de(pos):
+    p = (pos or '').strip()
+    return POS_DE.get(p.lower(), p) or None
+
+
 def espn_group(pos):
     p = (pos or '').lower()
     return ('Torwart' if 'keeper' in p else 'Abwehr' if 'defen' in p or 'back' in p
@@ -852,10 +868,15 @@ def mod_stats_espn(state):
     changed = matched = 0
     known = {slug(p['name']) for t in (squads.get('teams') or {}).values() for p in t.get('players', [])}
     added, on_roster, squad_changed = [], set(), False
+    departed = squads.setdefault('departed', {})  # Abgaenge merken, damit sie nicht gleich wieder auftauchen
+    cut = (NOW - timedelta(days=60)).strftime('%Y-%m-%d')
+    for k in [k for k, v in departed.items() if v < cut]:
+        del departed[k]
+        squad_changed = True
     for eid, d in agg.items():
         p = match(d)
         if not p:
-            if d['bl'] and slug(d['name'] or '') not in known:
+            if d['bl'] and slug(d['name'] or '') not in known and slug(d['name'] or '') not in departed:
                 added.append((eid, d))
             continue
         matched += 1
@@ -905,12 +926,13 @@ def mod_stats_espn(state):
             squad_changed = True
             if miss['n'] >= 3:
                 players.remove(p)
+                departed[slug(p['name'])] = TODAY
                 state['changes'].add('squad', 'Nicht mehr im Kader: %s (nicht mehr im offiziellen Bundesliga-Kader)' % p['name'])
     # Neue Spieler aus dem offiziellen Bundesliga-Kader automatisch in den App-Kader
     for eid, d in added:
         pid = 'espn-%s' % eid
         players.append({'id': pid, 'name': d['name'], 'img': 'https://a.espncdn.com/i/headshots/soccer/players/full/%s.png' % eid,
-                        'position': d['pos'] or 'Spieler', 'group': espn_group(d['pos']), 'number': str(d['jersey']) if d.get('jersey') else None,
+                        'position': pos_de(d['pos']), 'group': espn_group(d['pos']), 'number': str(d['jersey']) if d.get('jersey') else None,
                         'captain': False, 'absences': [], 'age': d.get('age'), 'birth': d.get('dob') or None, 'joined': TODAY,
                         'aiAdded': 'laut offiziellem Bundesliga-Kader (ESPN)'})
         new[pid] = {'apps': d['apps'], 'subIn': d['subIn'], 'goals': d['goals'], 'assists': d['assists'],
@@ -1132,7 +1154,8 @@ def build_prompt(headlines, squads, stories, grounded):
         'Parteien laut Stufe-1-Quelle), "advanced" (fortgeschrittene Verhandlungen), "talks" (Gespräche/Angebot), '
         '"interest" (Interesse/Kandidat), "denied" (dementiert/geplatzt), "extension" (Vertragsverlängerung).\n'
         'direction: "in" = kommt zum BVB, "out" = verlässt den BVB, "extension" = verlängert beim BVB.\n'
-        'Erfinde NIEMALS Zahlen. Abloese/Boni nur, wenn eine Quelle sie nennt, sonst null.\n'
+        'Erfinde NIEMALS Zahlen oder Fakten. Ablöse, Boni, Vertragsende, Verein, Position und Datum nur, wenn eine Quelle '
+        'sie klar nennt - bist du dir nicht sicher, gib null zurück (die App zeigt dann k. A.). Lieber null als raten.\n'
         'probability = deine Einschätzung der Wechselwahrscheinlichkeit in Prozent (0-100) für Gerüchte '
         '(interest/talks/advanced), abhängig von Status, Anzahl und Verlässlichkeit der Quellen; '
         'official/herewego/extension = 100, denied = 0.\n'
@@ -1387,7 +1410,7 @@ def apply_ai_updates(stories, state):
                      'Abwehr' if re.search(r'back|defen|verteid', pos, re.I) else
                      'Sturm' if re.search(r'forward|striker|wing|stürm|sturm|außen|aussen', pos, re.I) else 'Mittelfeld')
             club = (s.get('otherClub') or {}).get('name')
-            p = {'id': 'ai-' + slug(s['player']), 'name': s['player'], 'img': info.get('img'), 'position': pos or 'Neuzugang',
+            p = {'id': 'ai-' + slug(s['player']), 'name': s['player'], 'img': info.get('img'), 'position': pos_de(pos),
                  'group': group, 'number': None, 'captain': False, 'absences': [], 'age': info.get('age'),
                  'contract': ('%s-06-30' % y.group(1)) if y else None, 'joined': TODAY,
                  'from': {'name': club, 'fee': s.get('fee') or '-'} if club else None,
@@ -1395,6 +1418,7 @@ def apply_ai_updates(stories, state):
                  'aiAdded': 'laut %s' % s.get('source')}
             pro['players'].append(p)
             pro['count'] = len(pro['players'])
+            (squads.get('departed') or {}).pop(slug(s['player']), None)
             changed += 1
             state['changes'].add('squad', 'Neu im Kader: %s (laut %s)' % (s['player'], s.get('source')))
         elif s.get('direction') == 'out':
@@ -1403,6 +1427,7 @@ def apply_ai_updates(stories, state):
                 if p in team['players']:
                     team['players'].remove(p)
                     team['count'] = len(team['players'])
+                    squads.setdefault('departed', {})[slug(p['name'])] = TODAY
                     changed += 1
                     state['changes'].add('squad', 'Nicht mehr im Kader: %s (laut %s)' % (p['name'], s.get('source')))
     if changed:
