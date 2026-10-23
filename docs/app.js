@@ -1452,6 +1452,9 @@
       <p><b>BVB 09</b> ist eine inoffizielle Fan-App und nicht mit Borussia Dortmund verbunden. Namen, Wappen und Fotos gehören den jeweiligen Rechteinhabern.</p>
       <p><b>So bleibt alles aktuell:</b> Jeden Tag um 8:17, 14:17 und 20:17 Uhr läuft ein Programm auf GitHub. Es holt Spiele und die Bundesliga-Tabelle von OpenLigaDB, die Champions-League-Tabelle, Statistiken und den offiziellen Kader (Rückennummern, Zu- und Abgänge) von ESPN und Schlagzeilen über Google News. Die kostenlose <b>Gemini-KI</b> macht daraus Here-we-go-Karten, Verletzungs-News, Vertragsverlängerungen und das KI-Briefing. Statistiken kommen von ESPN, Tore zählt die App live aus den Spielberichten. Marktwerte gibt es direkt bei Transfermarkt (Transfers → TM).</p>
       <p><b>Spieltag-Zentrale:</b> Vor jedem Spiel schreibt Gemini einen Vorbericht mit KI-Tipp, nach dem Spiel einen Spielbericht. Offizielle Aufstellung, Live-Ticker und Statistik kommen während des Spiels direkt von ESPN. An Spieltagen läuft das Update zusätzlich stündlich. Dein Tippspiel wird nur auf deinem Handy gespeichert.</p>
+      <p><b>Saison:</b> Die Prognose simuliert die restliche Bundesliga-Saison 4000-mal mit einem Tormodell aus den bisherigen Ergebnissen (Angriff, Abwehr, Heimvorteil). Die Konferenz zeigt alle Spiele des Spieltags live mit Live-Tabelle.</p>
+      <p><b>Wetter &amp; Videos:</b> Das Wetter zum Anpfiff kommt von Open-Meteo (Stadion über OpenStreetMap), Highlights und Pressekonferenzen vom offiziellen YouTube-Kanal des BVB.</p>
+      <p><b>Deine Einstellungen</b> (Name, Lieblingsspieler, Startseite, Tipps) bleiben nur auf deinem Handy gespeichert.</p>
       <p><b>Transfermarkt</b> sperrt Server mit einem Bot-Schutz. Positionen, Verträge sowie Kader und Statistiken von BVB II und U19 stammen daher vom letzten direkten Abruf; Verlängerungen und Wechsel ergänzt die KI aus den News.</p>
       <p><b>Gerüchte-Ampel:</b> grün = sehr verlässlich (z. B. Fabrizio Romano, Sky, kicker, Ruhr Nachrichten), gelb = meist verlässlich (z. B. Bild, Sport1, Transfermarkt). Alles andere wird gar nicht angezeigt.</p>
       <p class="faint">Alle Angaben ohne Gewähr. KI-Zusammenfassungen können Fehler enthalten.</p>
@@ -2537,9 +2540,26 @@
     S.route = path;
     S.tabIdx = ti;
     S.depth = depth;
+    S.level = levelOf(path);
     afterRender(v, opts);
     onScroll();
     saveUI();
+  }
+  // Seitenwechsel: Detailseiten schieben sich wie bei iOS hinein, Tabs gleiten weich hinueber
+  const levelOf = (path) => (/^\/vergleich/.test(path) ? 2 : /^\/(spieler|spiel)\/|^\/mehr\/./.test(path) ? 1 : 0);
+  function navRender() {
+    if (!document.startViewTransition || reduce || !D.loaded || !S.route) { render(); return; }
+    const path = (location.hash || '#/home').slice(1) || '/home';
+    if (path === S.route) { render(); return; }
+    const r = ROUTES.find(([re]) => re.test(path)) || ROUTES[0];
+    const ti = TABS.indexOf(r[1]);
+    const lv = levelOf(path);
+    const nav = lv > (S.level || 0) ? 'push' : lv < (S.level || 0) ? 'pop' : ti !== S.tabIdx ? (ti > S.tabIdx ? 'tab-r' : 'tab-l') : 'fade';
+    const root = document.documentElement;
+    root.dataset.nav = nav;
+    const t = document.startViewTransition(() => render({ animate: false, vt: true }));
+    t.ready.catch(() => {}); // uebersprungen (schnelles Tippen, App im Hintergrund) - Seite ist trotzdem gerendert
+    t.finished.finally(() => { if (root.dataset.nav === nav) delete root.dataset.nav; });
   }
   function afterRender(v, opts) {
     raf2(() => {
@@ -2555,6 +2575,12 @@
     if (S.cmpPick && (S.route || '').startsWith('/vergleich')) { const sd = S.cmpPick; S.cmpPick = null; setTimeout(() => openCmpPick(sd), reduce ? 0 : 320); }
     const tabOn = $('.tabs a.on', v);
     if (tabOn) { const nav = tabOn.parentElement; nav.scrollLeft = tabOn.offsetLeft - (nav.clientWidth - tabOn.clientWidth) / 2; }
+    if (S.io) S.io.disconnect();
+    if (!reduce && (opts.animate !== false || opts.vt) && 'IntersectionObserver' in window) {
+      S.io = new IntersectionObserver((es) => es.forEach((en) => { if (en.isIntersecting) { en.target.classList.add('rv-in'); S.io.unobserve(en.target); } }), { rootMargin: '0px 0px -6% 0px' });
+      const fold = window.innerHeight;
+      [...v.children].forEach((el) => { if (el.getBoundingClientRect().top > fold) { el.classList.add('rv'); S.io.observe(el); } });
+    }
   }
   function setTab(t) {
     S.tab = t;
@@ -2608,6 +2634,7 @@
   function navigateVT(href, imgEl) {
     imgEl.style.viewTransitionName = 'player-photo';
     const t = document.startViewTransition(() => { history.pushState(null, '', href); S.prev = true; render({ animate: false }); });
+    t.ready.catch(() => {});
     t.finished.finally(() => { imgEl.style.viewTransitionName = ''; });
   }
   document.addEventListener('click', (e) => {
@@ -2801,7 +2828,7 @@
     if (e.key === 'Enter' && e.target.dataset && e.target.dataset.set) { e.target.blur(); return; }
     if (e.key === 'Escape') closeSheet();
   });
-  window.addEventListener('hashchange', () => { S.prev = true; closeSheet(); closeWrapped(); render(); });
+  window.addEventListener('hashchange', () => { S.prev = true; closeSheet(); closeWrapped(); navRender(); });
 
   // Ziehen zum Aktualisieren
   (() => {
@@ -2913,11 +2940,20 @@
   async function init() {
     if ('serviceWorker' in navigator && location.hostname !== 'localhost') navigator.serviceWorker.register('sw.js').catch(() => {});
     const t0 = Date.now();
+    const hi = $('#splash .sp-hi');
+    if (hi) hi.textContent = userName() ? `Hallo, ${userName()}!` : 'Heja BVB!';
     render();
     await loadData(false);
     if (D.loaded && D.matches) S.since = computeSince();
     await pollLive(true);
-    const wait = Math.max(0, (reduce ? 200 : 1500) - (Date.now() - t0));
+    const nm = D.loaded ? nextMatch('profis') : null;
+    const sub = $('#splash .sp-sub');
+    if (sub && nm && daysUntil(nm.date) === 0) {
+      sub.textContent = `${isLive(nm) ? 'Läuft gerade' : nm.timeKnown === false ? 'Heute' : 'Heute ' + F.time.format(new Date(nm.date)) + ' Uhr'} · ${tname(nm.home)} – ${tname(nm.away)}`;
+      sub.classList.add('on');
+      if (hi) hi.textContent = `Spieltag, ${userName() || 'Borusse'}!`;
+    }
+    const wait = Math.max(0, (reduce ? 200 : 1650) - (Date.now() - t0));
     setTimeout(() => {
       const sp = $('#splash');
       sp.classList.add('out');
