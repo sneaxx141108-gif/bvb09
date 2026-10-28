@@ -55,6 +55,8 @@ Repository klonen, in Claude Code öffnen, loslegen – alles Wichtige steht unt
 - FotMob (Seiten erlaubt, nur `/api` gesperrt; Daten aus `__NEXT_DATA__`): Profis – Verletzungen mit Rückkehr-Prognose
   (`fmInjury`), Ø-Note (`fmRating`), Vertragsende (je Lauf 8 Spielerseiten, `fmChecked`), fehlende Grunddaten;
   U19 – Kader abgleichen (neu rein, nach 3 Tagen ohne FotMob-Eintrag raus), **ohne Statistiken**. BVB II: keine FotMob-Seite gefunden.
+- FotMob-Transfers: Zu-/Abgänge der Profis (Ablöse, Leihe, ablösefrei) ergänzen die Transferbilanz (`fm_sync_transfers`);
+  Wechsel ab 1. März zählen zur kommenden Saison. BVB II (FotMob-Team 8395) hat bei FotMob keine Kaderliste.
 - football-data.co.uk (12 Ligen inkl. 2. Bundesliga): Ergebnisse, xG und Wettquoten (Marktdurchschnitt, Schlussquoten)
   fürs Prognosemodell; Team-Zuordnung zu ESPN über Namen + Bilanz (`fd_map_teams`).
 - Open-Meteo (Wetter), YouTube-RSS des BVB (Highlights/PK), TheSportsDB (Fotos/Wappen).

@@ -47,6 +47,19 @@ erledigte abhaken, danach committen und pushen (siehe `CLAUDE.md`).
 - [x] Committen, pushen. Git ist jetzt auf dem Laptop installiert, das Repository liegt unter `Dokumente\bvb09`.
 - Offen zur Entscheidung (Niklas): U19-Statistiken wären mit FotMob jetzt aktuell möglich – bisher bewusst ausgeblendet.
 
+## Langzeit-Test vom 28.10.2026 (3 Saisons)
+
+- Saisonwechsel simuliert (Daten als Vorsaison markiert): alle 6 Server-Module ok, alles auf neue Saison umgestellt,
+  Bilanz-Reset, alter Monatsrückblick/alte Story raus, Abgang aus dem Kader entfernt, Vorsaison fürs Modell neu geholt.
+- Sommerpause 2027 ohne Spielpläne simuliert: Module ohne neue Daten scheitern sauber, alte Dateien bleiben heil,
+  App auf 19 Seiten fehlerfrei. Gleiches für den Zustand nach dem Wechsel.
+- Groq-Schlüssel getestet (gpt-oss-120b, bereit). Ernstfall-Test: Groq erledigt die News-Aufgabe (6 s, mit Briefing),
+  findet aber weniger (1 statt 3 Meldungen, Prompt auf 13.000 Zeichen gekürzt) – Notnagel, nicht gleichwertig.
+- Neu dafür: täglicher Schlüssel-Test (`status.aiCheck`), monatlicher Ernstfall-Test (`gemini.drill`),
+  Transferbilanz zusätzlich aus FotMob. Bekannte Lücke: BVB-II-Kader hat keine automatische Quelle.
+- Größte Langzeit-Risiken: Änderungen bei ESPN (inoffizielle API) und FotMob (`__NEXT_DATA__`), Gratis-Kontingente
+  der KIs, veraltete GitHub-Action-Versionen. Jeweils kleine Reparaturen, die Update-Zentrale zeigt Fehler rot.
+
 ## Danach
 
 - [x] GitHub Pages eingeschaltet (Quelle „GitHub Actions“) – App online, Lauf #95 mit allen Modulen grün (28.10.2026).
