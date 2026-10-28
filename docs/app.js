@@ -1308,8 +1308,13 @@
     const ai = st.ai || {};
     if (Object.keys(ai).length) {
       const on = [['gemini', 'Gemini'], ['groq', 'Groq'], ['cerebras', 'Cerebras'], ['openrouter', 'OpenRouter'], ['mistral', 'Mistral']];
+      // Ersatz-KIs werden täglich mit einer Mini-Anfrage getestet (status.aiCheck)
+      const chk = st.aiCheck || {};
+      const bad = (k2) => ai[k2] && chk[k2] && chk[k2].ok === false;
+      const tested = on.filter(([k2]) => k2 !== 'gemini' && ai[k2] && chk[k2]);
       out += `<section class="card" style="margin-top:12px;display:flex;flex-direction:column;gap:10px"><span class="eyebrow">KI-Team · springt der Reihe nach ein</span>
-        <div class="ai-chips">${on.map(([k2, l]) => `<span class="chip sm ${ai[k2] ? 'ok' : 'ghost'}">${ai[k2] ? '✓' : '–'} ${l}</span>`).join('')}</div>
+        <div class="ai-chips">${on.map(([k2, l]) => `<span class="chip sm ${bad(k2) ? 'warn' : ai[k2] ? 'ok' : 'ghost'}">${bad(k2) ? '!' : ai[k2] ? '✓' : '–'} ${l}</span>`).join('')}</div>
+        ${tested.map(([k2, l]) => `<div class="kv"><span>${l}-Test</span><span class="${chk[k2].ok ? 'green' : 'red'}">${chk[k2].ok ? 'bereit' : esc(chk[k2].error || 'Fehler')} · ${esc(rel(chk[k2].at))}</span></div>`).join('')}
         <p class="faint" style="font-size:12px;line-height:1.5;font-weight:600">Antwortet Gemini nicht, übernehmen die anderen News, Gerüchte und Verletzungen. Prognosen, Wahrscheinlichkeiten und den KI-Tipp rechnet die App selbst – ganz ohne KI.</p></section>`;
     }
     const modRow = (m) => `<div class="mod">${m.ok === false ? I.bad : m.warning ? I.warn : I.ok}<span class="grow"><b>${esc(m.label)}</b>${m.ok === false ? `<div class="red" style="font-size:12px">${esc(m.error || 'Fehler')}</div>` : m.warning ? `<div class="amber" style="font-size:12px">${esc(m.warning)}</div>` : ''}<div class="faint" style="font-size:11px;font-weight:600">${m.at ? 'aktualisiert ' + esc(rel(m.at)) : 'noch nie'}${m.seconds != null ? ' · ' + m.seconds + ' s' : ''}</div></span></div>`;

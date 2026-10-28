@@ -2455,6 +2455,45 @@ def backups_set():
     return [name for name, env, _, _, _ in AI_BACKUPS if os.environ.get(env, '').strip()]
 
 
+def backup_check(prev):
+    """Testet jede eingerichtete Ersatz-KI mit einer Mini-Anfrage (klappt es, nur einmal am Tag) - so faellt ein
+    kaputter Schluessel nicht erst auf, wenn Gemini wirklich ausfaellt. Ergebnis zeigt die Update-Zentrale."""
+    out = {}
+    for name, env, base, prefs, _ in AI_BACKUPS:
+        key = os.environ.get(env, '').strip()
+        if not key:
+            continue
+        old = (prev or {}).get(name) or {}
+        if old.get('ok') and (old.get('at') or '')[:10] == TODAY:
+            out[name] = old
+            continue
+        headers = {'Authorization': 'Bearer ' + key}
+        if name == 'openrouter':
+            headers.update({'HTTP-Referer': 'https://github.com/sneaxx141108-gif/bvb09', 'X-Title': 'BVB 09 Fan-App'})
+        res = {'ok': False, 'at': iso(NOW), 'error': 'kein Modell gefunden'}
+        for model in backup_models(name, base, key, prefs):
+            try:
+                http_json(base + '/chat/completions', headers=headers, timeout=60,
+                          body={'model': model, 'max_tokens': 16, 'temperature': 0,
+                                'messages': [{'role': 'user', 'content': 'Antworte nur mit: ok'}]})
+                res = {'ok': True, 'at': iso(NOW), 'model': model}
+                break
+            except urllib.error.HTTPError as e:
+                detail = ''
+                try:
+                    detail = json.loads(e.read().decode('utf-8')).get('error', {}).get('message', '')[:120]
+                except Exception:
+                    pass
+                res['error'] = ('HTTP %s %s' % (e.code, detail)).strip()
+                if e.code in (401, 403):
+                    break  # Schluessel ungueltig - andere Modelle helfen nicht
+            except Exception as e:
+                res['error'] = str(e)[:120]
+        out[name] = res
+        log('  Ersatz-KI %s: %s' % (name, 'bereit (%s)' % res.get('model') if res['ok'] else res.get('error')))
+    return out
+
+
 def ai_available():
     return bool(os.environ.get('GEMINI_API_KEY', '').strip() or backups_set())
 
@@ -3362,6 +3401,11 @@ def main():
         'debug': DEBUG[:8],
     }
     if kind == 'server':
+        try:
+            status['aiCheck'] = backup_check(prev_status.get('aiCheck'))
+        except Exception as e:
+            log('Ersatz-KI-Test: %s' % e)
+            status['aiCheck'] = prev_status.get('aiCheck') or {}
         tm = load('status-pc.json', {}) or {}
         status['transfermarkt'] = {'blocked': True, 'lastDirect': tm.get('lastRun'),
                                    'aiUpdatedAt': (load('squads.json', {}) or {}).get('aiUpdatedAt')}
