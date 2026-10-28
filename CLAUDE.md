@@ -100,6 +100,8 @@ Ohne `GEMINI_API_KEY` laufen alle Module außer den KI-Texten. Python nur mit St
 - GitHub Pages ist an (Quelle „GitHub Actions“, seit 28.10.2026), die App ist online.
 - Repository auf Niklas' Laptop: `C:\Users\Admin\Documents\bvb09` (Git + Git Credential Manager installiert).
   Lokale Hilfsordner `bvb09-main/`, `screenshots/`, `.claude/` stehen in `.git/info/exclude` – nie committen.
-- **Offen bei Niklas:** Ersatz-KI-Schlüssel anlegen (Konto + Schlüssel macht Niklas selbst, nicht Claude).
+- Ersatz-KI: Groq-Schlüssel (`GROQ_API_KEY`) seit 28.10.2026 eingetragen. Jede eingerichtete Ersatz-KI wird täglich mit
+  einer Mini-Anfrage getestet (`backup_check` → `status.aiCheck`, sichtbar in der Update-Zentrale). Weitere Ersatz-KIs
+  sind optional – Konto + Schlüssel macht Niklas selbst, nicht Claude.
 - **Offen (zuletzt, gemeinsam):** Push-Benachrichtigungen über ntfy (Tore, Aufstellung, Here we go, Verletzungen).
 - Aktuelle Arbeit und Details: siehe `ENTWICKLUNG.md`.

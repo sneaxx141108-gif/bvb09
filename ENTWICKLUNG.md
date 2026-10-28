@@ -50,5 +50,5 @@ erledigte abhaken, danach committen und pushen (siehe `CLAUDE.md`).
 ## Danach
 
 - [x] GitHub Pages eingeschaltet (Quelle „GitHub Actions“) – App online, Lauf #95 mit allen Modulen grün (28.10.2026).
-- Ersatz-KI-Schlüssel (Niklas).
+- [x] Ersatz-KI: Groq-Schlüssel eingetragen (28.10.2026), täglicher Test in der Update-Zentrale.
 - Zuletzt gemeinsam: Push-Benachrichtigungen über ntfy.
