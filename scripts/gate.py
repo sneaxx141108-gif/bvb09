@@ -4,7 +4,7 @@
 * 3x taeglich um 8:17, 14:17 und 20:17 Uhr deutscher Zeit: alles (GitHub rechnet in UTC,
   deshalb gibt es je zwei Zeiten fuer Sommer- und Winterzeit - nur die passende laeuft).
 * An BVB-Spieltagen zusaetzlich stuendlich, von 7 Stunden vor bis 4 Stunden nach dem Anpfiff: alles.
-* Nach jedem anderen Bundesliga- oder Champions-League-Spiel (bis gut 2 Stunden nach Spielende):
+* Nach jedem anderen Bundesliga-, Champions-League- oder DFB-Pokal-Spiel (bis gut 2 Stunden nach Spielende):
   nur Spiele, Prognosen, Statistiken und Spieltag-Zentrale - so aendern sich die Wahrscheinlichkeiten nach jedem Spiel.
 Ausgabe fuer GitHub Actions: run=true|false und modules=... (leer = alles)
 """
@@ -46,7 +46,7 @@ def matchday(now, path='docs/data/matches.json'):
 
 
 def match_ended(now, path='docs/data/season.json'):
-    """Ist in den letzten gut 2 Stunden ein Bundesliga- oder CL-Spiel zu Ende gegangen?"""
+    """Ist in den letzten gut 2 Stunden ein Bundesliga-, CL- oder Pokalspiel zu Ende gegangen?"""
     try:
         with open(path, encoding='utf-8') as f:
             ends = json.load(f).get('nextEnds') or []

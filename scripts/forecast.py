@@ -19,6 +19,7 @@ MAXG = 10               # Tore je Team, die das Modell betrachtet (mehr kommt pr
 DC_RHO = -0.07          # Dixon-Coles: etwas mehr 0:0/1:1, etwas weniger 1:0/0:1 als reines Poisson
 HALF_LIFE = 180.0       # Tage: so schnell verliert ein Ergebnis an Gewicht
 W_PREV = 0.5            # Vorsaison zaehlt halb
+W_LEAGUE_PREV = 0.25    # Vorsaison-Tabelle der heimischen Liga (schon gealtert - zaehlt ein Viertel)
 W_MARKET = 2.0          # eine Quote zaehlt wie zwei Ergebnisse (sie fasst viel mehr Wissen zusammen)
 TAU = 4.0               # Zug zur Mitte: verhindert Ausreisser bei wenigen Spielen
 SIGMA = 0.12            # Unsicherheit der Staerke je Team (Form, Verletzungen, Trainerwechsel) - gegen zu sichere Prognosen
@@ -105,8 +106,25 @@ def p_over(m, line):
     return sum(v for x, row in enumerate(m) for y, v in enumerate(row) if x + y > line)
 
 
-def market_lambdas(od):
-    """Wettquoten -> erwartete Tore (Heim, Gast) im selben Tormodell."""
+_TOTALS = {}
+
+
+def total_from_pover(line, pover):
+    """Erwartete Tore gesamt aus der Ueber/Unter-Quote (Nachschlagetabelle, ausgeglichenes Spiel angenommen)."""
+    tab = _TOTALS.get(line)
+    if tab is None:
+        tab = _TOTALS[line] = [(t / 20.0, p_over(score_matrix(t / 40.0, t / 40.0), line)) for t in range(20, 121)]
+    if pover <= tab[0][1]:
+        return tab[0][0]
+    for (t0, p0), (t1, p1) in zip(tab, tab[1:]):
+        if p0 <= pover <= p1:
+            return t0 + (t1 - t0) * (pover - p0) / ((p1 - p0) or 1e-9)
+    return tab[-1][0]
+
+
+def market_lambdas(od, quick=False):
+    """Wettquoten -> erwartete Tore (Heim, Gast) im selben Tormodell.
+    quick: Gesamttore aus der Nachschlagetabelle statt verschachtelter Suche (fuer tausende Liga-Spiele)."""
     target = od['ph'] - od['pa']
 
     def sup_for(total):
@@ -120,7 +138,9 @@ def market_lambdas(od):
                 hi = mid
         return (lo + hi) / 2
     total = 2.75
-    if od.get('line') and od.get('pover'):
+    if quick and od.get('line') and od.get('pover'):
+        total = total_from_pover(od['line'], od['pover'])
+    elif od.get('line') and od.get('pover'):
         lo, hi = 1.0, 6.0
         for _ in range(18):
             mid = (lo + hi) / 2
@@ -323,8 +343,9 @@ class Scenario:
 
 
 # ---------------------------------------------------------------- Bundesliga
-def bl_forecast(events, model, market, sims=15000, seed=11):
-    """Saison-Prognose: Meister, Champions League (1-4), Europa League (5), Conference League (6), Relegation (16), Abstieg (17-18)."""
+def bl_forecast(events, model, market, sims=15000, seed=11, focus=None):
+    """Saison-Prognose: Meister, Champions League (1-4), Europa League (5), Conference League (6), Relegation (16), Abstieg (17-18).
+    focus = ID eines kommenden Spiels: zusaetzlich 'Was waere wenn' - Meister- und CL-Chancen je nach Ausgang dieses Spiels."""
     teams = {}
     for e in events:
         teams[e['home']['id']] = e['home']
@@ -365,6 +386,9 @@ def bl_forecast(events, model, market, sims=15000, seed=11):
     per = max(1, sims // scen)
     sims = scen * per
     mats = []
+    fk = next((k for k, (_, _, e) in enumerate(rem) if e['id'] == focus), None) if focus else None
+    wi = {o: [[0, 0] for _ in ids] for o in 'HDA'}  # je Ausgang: [Meister, Platz 1-4]
+    wn = dict.fromkeys('HDA', 0)
     for s_ in range(sims):
         if s_ % per == 0:
             sc = Scenario(model, market, rng, ids)
@@ -372,9 +396,12 @@ def bl_forecast(events, model, market, sims=15000, seed=11):
         pts = [r[0] for r in base]
         gd = [r[1] for r in base]
         gf = [r[2] for r in base]
-        for i, j, cum in mats:
+        fo = None
+        for mi, (i, j, cum) in enumerate(mats):
             k = bisect.bisect_left(cum, rng.random())
             x, y = divmod(k, width)
+            if mi == fk:
+                fo = 'H' if x > y else 'A' if x < y else 'D'
             gd[i] += x - y
             gd[j] += y - x
             gf[i] += x
@@ -390,20 +417,106 @@ def bl_forecast(events, model, market, sims=15000, seed=11):
         for p, t in enumerate(order):
             counts[t][p] += 1
             exp_pts[t] += pts[t]
+        if fo:
+            wn[fo] += 1
+            wi[fo][order[0]][0] += 1
+            for t in order[:4]:
+                wi[fo][t][1] += 1
     cur = sorted(range(n), key=lambda t: (-base[t][0], -base[t][1], -base[t][2], teams[ids[t]]['name']))
     cur_pos = {t: p + 1 for p, t in enumerate(cur)}
     pct = lambda t, lo, hi: round(100.0 * sum(counts[t][lo - 1:hi]) / sims, 1)  # noqa: E731
+    left = [0] * n
+    for i, j, _ in rem:
+        left[i] += 1
+        left[j] += 1
     out = []
     for t in range(n):
         tid = ids[t]
         out.append({'espnId': tid, 'name': teams[tid]['name'], 'logo': teams[tid].get('logo'), 'pos': cur_pos[t],
-                    'points': base[t][0], 'played': sum(base[t][4:7]), 'diff': base[t][1],
+                    'points': base[t][0], 'played': sum(base[t][4:7]), 'diff': base[t][1], 'goals': base[t][2], 'against': base[t][3],
                     'expPoints': round(exp_pts[t] / sims, 1), 'title': pct(t, 1, 1), 'cl': pct(t, 1, 4), 'el': pct(t, 5, 5),
-                    'ecl': pct(t, 6, 6), 'rel': pct(t, n - 2, n - 2), 'down': pct(t, n - 1, n),
+                    'ecl': pct(t, 6, 6), 'rel': pct(t, n - 2, n - 2), 'down': pct(t, n - 1, n), 'left': left[t],
+                    'ppg': round((exp_pts[t] / sims - base[t][0]) / left[t], 2) if left[t] else None,
                     'dist': [round(100.0 * c / sims, 1) for c in counts[t]], 'strength': round(model.strength(tid), 3)})
     out.sort(key=lambda r: (-r['expPoints'], r['pos']))
-    return {'sims': sims, 'played': sum(1 for e in events if e['done']), 'remaining': len(rem),
-            'withOdds': sum(1 for e in events if not e['done'] and e['id'] in market), 'teams': out}
+    res = {'sims': sims, 'played': sum(1 for e in events if e['done']), 'remaining': len(rem),
+           'withOdds': sum(1 for e in events if not e['done'] and e['id'] in market), 'teams': out}
+    if fk is not None and all(wn.values()):
+        e = rem[fk][2]
+        res['whatIf'] = {'id': e['id'], 'date': e['date'], 'home': e['home']['id'], 'away': e['away']['id'],
+                         'p': {o: round(100.0 * wn[o] / sims, 1) for o in 'HDA'},
+                         'teams': {ids[t]: {o: [round(100.0 * wi[o][t][0] / wn[o], 1), round(100.0 * wi[o][t][1] / wn[o], 1)] for o in 'HDA'}
+                                   for t in range(n) if counts[t][0] or sum(counts[t][:4]) > 0.01 * sims}}
+    return res
+
+
+# ---------------------------------------------------------------- DFB-Pokal
+DFB_ROUNDS = ['first-round', 'second-round', 'round-of-16', 'quarterfinals', 'semifinals', 'final']
+
+
+def play_cup(rng, sc, home, away, ev=None, neutral=False):
+    """Ein Pokalspiel: bei Unentschieden Verlaengerung (30 Minuten), danach Elfmeterschiessen."""
+    lh, la = sc.lam(home, away, ev, neutral)
+    x, y = pois_sample(rng, lh), pois_sample(rng, la)
+    if x == y:
+        x += pois_sample(rng, lh / 3)
+        y += pois_sample(rng, la / 3)
+    if x != y:
+        return home if x > y else away
+    return home if rng.random() < 0.5 else away
+
+
+def dfb_forecast(events, model, market, sims=15000, seed=5):
+    """DFB-Pokal: jede Runde ein Spiel, danach freie Auslosung; Amateure (dem Modell unbekannte Teams) haben gegen
+    Profis Heimrecht, das Finale in Berlin ist neutral. Gespielte Partien zaehlen mit ihrem Sieger."""
+    by_round = {r: [e for e in events if e['slug'] == r] for r in DFB_ROUNDS}
+    cur = max((i for i, r in enumerate(DFB_ROUNDS) if by_round[r]), default=None)
+    if cur is None or len(by_round[DFB_ROUNDS[cur]]) != 2 ** (len(DFB_ROUNDS) - 1 - cur):
+        return None  # Runde noch nicht komplett angesetzt
+    games = by_round[DFB_ROUNDS[cur]]
+    teams = {}
+    for e in games:
+        teams[e['home']['id']] = e['home']
+        teams[e['away']['id']] = e['away']
+    ids = sorted(teams)
+    later = DFB_ROUNDS[cur + 1:] + ['win']
+    reach = {k: dict.fromkeys(ids, 0) for k in later}
+    rng = random.Random(seed + sum(1 for e in events if e['done']))
+    scen = max(1, min(SCENARIOS, sims // 200))
+    per = max(1, sims // scen)
+    sims = scen * per
+    for s_ in range(sims):
+        if s_ % per == 0:
+            sc = Scenario(model, market, rng, ids)
+        alive = []
+        for e in games:
+            h, a = e['home']['id'], e['away']['id']
+            if e['done']:
+                w = e.get('winner') if e.get('winner') in (h, a) else (h if e['hs'] > e['as'] else a if e['as'] > e['hs'] else rng.choice((h, a)))
+            else:
+                w = play_cup(rng, sc, h, a, e, e.get('neutral', False) or DFB_ROUNDS[cur] == 'final')
+            alive.append(w)
+        for k in later:
+            if k == 'win' or len(alive) == 1:
+                reach['win'][alive[0]] += 1
+                break
+            for t in alive:
+                reach[k][t] += 1
+            rng.shuffle(alive)
+            final = k == 'final'
+            nxt = []
+            for i in range(0, len(alive) - 1, 2):
+                h, a = alive[i], alive[i + 1]
+                if not final and model.known(h) and not model.known(a):
+                    h, a = a, h  # Heimrecht fuer den Amateurverein
+                nxt.append(play_cup(rng, sc, h, a, None, final))
+            alive = nxt
+    out = []
+    for t in ids:
+        out.append(dict({'espnId': t, 'name': teams[t]['name'], 'logo': teams[t].get('logo'), 'strength': round(model.strength(t), 3)},
+                        **{k: round(100.0 * reach[k][t] / sims, 1) for k in later}))
+    out.sort(key=lambda r: (-r['win'], -r[later[0]]))
+    return {'sims': sims, 'round': DFB_ROUNDS[cur], 'roundDone': all(e['done'] for e in games), 'keys': later, 'teams': out}
 
 
 # ---------------------------------------------------------------- Champions League

@@ -19,6 +19,8 @@ Repository klonen, in Claude Code öffnen, loslegen – alles Wichtige steht unt
 - Unbekanntes wird als **„k. A.“** angezeigt – nie raten oder erfinden.
 - **Keine Marktwerte** (nur drei Links zu Transfermarkt: Profis, U23, U19).
 - **Keine U23-/U19-Spielpläne, -Tabellen oder -Statistiken** (Transfermarkt sperrt GitHub, die Daten würden veralten).
+  `stats.json` hat nur `profis`; in der App liefert `statsOf()` für U23/U19 nichts, Kader-Karten zeigen dort den Vertrag.
+- CL-Ring **„Nächste Runde“**: in der Ligaphase „k. A.“, danach die Chance, die laufende K.-o.-Runde zu überstehen.
 - **Tabellen ohne Zonen-Markierungen** (kein Farbbalken für CL/Relegation/Abstieg).
 - Design: dunkles „Flutlicht“-/Glas-Design in BVB-Gelb, Tageszeit-Stimmungen (Morgen/Tag/Abend/Nacht deutlich
   verschieden). **Keine Stadionlicht-Optik** (fand Niklas cringe).
@@ -36,8 +38,9 @@ Repository klonen, in Claude Code öffnen, loslegen – alles Wichtige steht unt
 | `docs/index.html`, `docs/app.js`, `docs/app.css` | die App (eine Seite, Hash-Routen wie `#/spiele/profis/saison`) |
 | `docs/sw.js` | Service Worker – bei jeder App-Änderung `SHELL = 'bvb09-shell-vNN'` hochzählen |
 | `docs/data/*.json` | Daten, schreibt der Server (nicht von Hand ändern) |
-| `scripts/update.py` | Daten-Update. Server-Module: `matches`, `season`, `stats_espn`, `news`, `matchcenter`; nur vom PC: `squads`, `stats`, `transfers` (Transfermarkt) |
-| `scripts/forecast.py` | Prognose-Rechner: Spielstärken (Ergebnisse + Wettquoten), Bundesliga- und CL-Simulation, KI-Tipp |
+| `scripts/update.py` | Daten-Update. Server-Module: `matches`, `season`, `stats_espn`, `fotmob`, `news`, `matchcenter`; nur vom PC: `squads`, `stats`, `transfers` (Transfermarkt) |
+| `scripts/forecast.py` | Prognose-Rechner: Spielstärken (Ergebnisse, xG, Wettquoten), Bundesliga-, CL- und DFB-Pokal-Simulation, KI-Tipp |
+| `docs/data/cl.json` | alle CL-Spiele der Saison (Ligaphase mit Spieltag, K.-o. mit Hin-/Rückspiel) + Weiterkommen-Chancen; schreibt `season` |
 | `scripts/gate.py` | entscheidet, ob/was ein geplanter Lauf macht |
 | `.github/workflows/update.yml` | 3× täglich (8:17/14:17/20:17 Uhr), an BVB-Spieltagen stündlich, nach jedem BL/CL-Spiel ein kurzer Lauf |
 
@@ -46,15 +49,28 @@ Repository klonen, in Claude Code öffnen, loslegen – alles Wichtige steht unt
 - ESPN (frei): Ergebnisse aller Wettbewerbe, CL-Tabelle, Profi-Statistiken je Wettbewerb, Kader-Abgleich,
   Live-Ticker/Aufstellung in der App, **Wettquoten (DraftKings)** – nur vor dem Spiel sichtbar, deshalb archiviert
   `update.py` sie in `docs/data/model.json`.
-- Google News (RSS) → Gemini: Transfer-Storys, Here we go, Verletzungen/Sperren, Verlängerungen, Briefing, Stimmung,
-  Vor-/Spielberichte. Nur verlässliche Quellen (Stufe 1/2).
+- Google News (RSS) + kicker-Newsfeed (`newsfeed.kicker.de/team/borussia-dortmund`) → Gemini: Transfer-Storys, Here we go,
+  Verletzungen/Sperren, Verlängerungen, Briefing, Stimmung, Vor-/Spielberichte. Nur verlässliche Quellen (Stufe 1/2).
+  kicker-Kader-/Statistikseiten sperren Server (403) und robots.txt verbietet sie – nicht umgehen.
+- FotMob (Seiten erlaubt, nur `/api` gesperrt; Daten aus `__NEXT_DATA__`): Profis – Verletzungen mit Rückkehr-Prognose
+  (`fmInjury`), Ø-Note (`fmRating`), Vertragsende (je Lauf 8 Spielerseiten, `fmChecked`), fehlende Grunddaten;
+  U19 – Kader abgleichen (neu rein, nach 3 Tagen ohne FotMob-Eintrag raus), **ohne Statistiken**. BVB II: keine FotMob-Seite gefunden.
+- football-data.co.uk (12 Ligen inkl. 2. Bundesliga): Ergebnisse, xG und Wettquoten (Marktdurchschnitt, Schlussquoten)
+  fürs Prognosemodell; Team-Zuordnung zu ESPN über Namen + Bilanz (`fd_map_teams`).
 - Open-Meteo (Wetter), YouTube-RSS des BVB (Highlights/PK), TheSportsDB (Fotos/Wappen).
 
 ### Prognose-Modell (`forecast.py`)
 - Poisson-Modell (Angriff/Abwehr je Team, Heimvorteil), Dixon-Coles-Korrektur, Zug zur Mitte (`TAU`).
-- Daten: Ergebnisse dieser Saison (voll), Vorsaison (halb), Wettquoten (doppelt), dazu die Tabellen der heimischen
-  Ligen aller CL-Teams (damit z. B. PSG nicht nur aus CL-Spielen bewertet wird).
-- Unsicherheit der Stärken über Szenarien (`SIGMA`), 15.000 Simulationen.
+- Daten: jedes Spiel aus 12 Ligen von football-data (Tore mit xG gemischt, Wettquoten doppelt), BL/CL-Ergebnisse von ESPN,
+  Vorsaison halb, ESPN-Quoten der CL; Tabellen der Ligen ohne football-data (AUT, NOR, DEN, SWE) und Vorsaison-Tabellen
+  als „Team gegen Liga-Durchschnitt“ (`L:<liga>`); alle Europa-/Conference-League-Spiele als Brücke zwischen den Ligen.
+- Unsicherheit der Stärken über Szenarien (`SIGMA` = 0,12), 15.000 Simulationen. Nachgemessen (28.10.2026, Saison 25/26,
+  11 Ligen): die Markt-Stärke eines Teams schwankt Okt.→Mai nur um ~0,07 je Team – 0,12 ist also eher vorsichtig.
+  Nicht künstlich erhöhen, um „schönere“ Zahlen zu bekommen.
+- Saison-Tab erklärt die Zahlen: Titelrennen (BVB gegen stärksten Rivalen, Punkte pro Spiel ab jetzt), „Was wäre wenn“
+  für das nächste BL-Spiel (`whatIf`), nächste Spiele mit Sieg/Remis/Niederlage, Prognose-Tabelle, CL- und Pokal-Favoriten.
+- DFB-Pokal (`dfb_forecast`): Runden aus ESPN-Slugs, ein Spiel je Runde, freie Auslosung, Amateure (dem Modell unbekannt)
+  mit Heimrecht, Finale neutral. Nach jedem BL-, CL- und Pokalspiel neu (`nextEnds` → `gate.py`).
 - CL nach UEFA-Regeln seit 2024/25: Ligaphase (Tiebreaker), Playoffs 9/10–23/24 usw., Achtelfinale gegen Top 8,
   Turnierbaum, Hin-/Rückspiel (Rückspiel beim Gesetzten), Verlängerung, Elfmeterschießen, Finale neutral.
 - KI-Tipp = Ergebnis mit den meisten erwarteten Tipp-Punkten (3 exakt / 2 Tordifferenz / 1 Tendenz).

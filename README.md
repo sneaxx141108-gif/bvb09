@@ -8,13 +8,14 @@ Web-App fürs iPhone (in Safari öffnen → Teilen → „Zum Home-Bildschirm“
 
 - **Transfers:** Here-we-go-Karten mit Spielerfoto, beiden Wappen, Ablöse, Boni und Vertrag; Gerüchte mit Wechselwahrscheinlichkeit und Gerüchte-Ampel; Transferbilanz; Vertragsübersicht; Links zu den Transfermarkt-Seiten von Profis, U23 und U19
 - **Spiele (Profis):** kommende Spiele mit Countdown, Ergebnisse mit Torschützen, Tabellen (Bundesliga und Champions League), Ranglisten für Tore, Vorlagen und Scorer, Live-Ergebnisse während der Spiele
+- **Champions League:** alle Spiele jedes Spieltags und jeder K.-o.-Runde (live), Tabelle, K.-o.-Runde mit Hin- und Rückspiel, Gesamtstand und Weiterkommen-Chance – in der Ligaphase als „Stand jetzt“ nach der Setzliste
 - **Bundesliga-Konferenz:** alle Spiele des Spieltags live mit Live-Tabelle
-- **Saison:** Fieberkurve (Platz nach jedem Spieltag, mit Vorsaison), Bundesliga-Prognose (Meister, Champions League, Abstieg), Champions-League-Prognose (Top 8, Top 24, jede K.-o.-Runde mit echtem Gegner und Hinspiel-Ergebnis, Titel), Liga-Torjäger
+- **Saison:** Fieberkurve (Platz nach jedem Spieltag, mit Vorsaison), Bundesliga-Prognose (Meister, Champions League, Abstieg) mit Titelrennen-Erklärung, „Was wäre wenn“ fürs nächste Spiel, Chancen der nächsten Spiele und kompletter Prognose-Tabelle, Champions-League-Prognose (Top 8, Top 24, jede K.-o.-Runde mit echtem Gegner und Hinspiel-Ergebnis, Titel, alle Favoriten), DFB-Pokal-Prognose (jede Runde bis zum Pokalsieg), Liga-Torjäger
 - **KI-Tipp:** aus Wettquoten und Spielstärken berechnet – das Ergebnis mit den meisten erwarteten Tipp-Punkten, dazu die Gewinnchancen
 - **Spieltag-Zentrale:** KI-Vorbericht mit KI-Tipp, Wetter zum Anpfiff, offizielle Aufstellung, Live-Ticker und Live-Statistik (ESPN), KI-Spielbericht mit Spieler des Spiels, Highlights und Pressekonferenzen, Gegner-Check (Tabelle, Form, direkter Vergleich), Tor-Feier mit Torhorn und Live-Leiste
 - **Tippspiel:** Du gegen die KI (3/2/1 Punkte, nur auf dem Handy gespeichert)
 - **Kader:** alle Spieler mit Foto, Vertrag, Verletzungen und Sperren; Spielerprofil mit Statistiken je Wettbewerb (Bundesliga, Pokal, Champions League) und Formkurve; Lieblingsspieler; Spielervergleich
-- **Mehr:** KI-Update-Zentrale, Einstellungen, Statistiken, Vergleich, Meine Elf, Tippspiel, Rückblick als Story (Monat und Saison), Lazarett, Talente-Radar, Erfolge
+- **Mehr:** KI-Update-Zentrale, Einstellungen, Statistiken (mit Ø-Noten von FotMob), Vergleich, Meine Elf (13 Formationen + eigene Formation mit frei verschiebbaren Positionen), Tippspiel, Rückblick als Story (Monat und Saison), Lazarett, Talente-Radar, Erfolge
 - **Home:** persönliche Begrüßung, Storys (verschwinden nach 30 Stunden), Spieltags-Story, „Seit deinem letzten Besuch“, deine Spieler, Stimmungsbarometer (Gemini); Reihenfolge und Blöcke frei einstellbar
 - **Design:** Startbildschirm mit Flutlicht, Tageszeit-Design (Morgen, Tag, Abend, Nacht, Spieltag), weiche Seitenwechsel
 
@@ -29,7 +30,9 @@ Web-App fürs iPhone (in Safari öffnen → Teilen → „Zum Home-Bildschirm“
 | Vor- und Spielberichte, KI-Tipp, Monatsfazit, Stimmungsbarometer | Gemini aus Spieldaten und Google-News-Schlagzeilen |
 | Transfer-Storys, Verletzungen, Vertragsverlängerungen, KI-Briefing | Google News (u. a. kicker-, Sky-, Transfermarkt-News), ausgewertet von der kostenlosen **Gemini-KI** – nur vertrauenswürdige Quellen |
 | Fieberkurve, Liga-Torjäger, Basis für die Konferenz | berechnet aus OpenLigaDB |
-| Bundesliga- und Champions-League-Prognose, KI-Tipp (je 15.000 Simulationen) | `scripts/forecast.py` – Spielstärken aus Ergebnissen (ESPN) und Wettquoten (DraftKings über ESPN), ganz ohne KI |
+| Bundesliga-, Champions-League- und DFB-Pokal-Prognose, KI-Tipp (je 15.000 Simulationen) | `scripts/forecast.py` – Spielstärken aus Ergebnissen, xG und Wettquoten aus 12 Ligen (football-data.co.uk) sowie Ergebnissen und Quoten von ESPN, ganz ohne KI |
+| Verletzungen mit Rückkehr-Prognose, Ø-Noten, Vertragsende der Profis, U19-Kader | FotMob |
+| BVB-Nachrichten für die KI-Auswertung | Google News + kicker-Newsfeed |
 | Wetter zum Anpfiff | Open-Meteo (Stadion über TheSportsDB und OpenStreetMap) |
 | Highlights und Pressekonferenzen | YouTube-Kanal des BVB (RSS) |
 | Fotos und Wappen für neue Spieler/Vereine | TheSportsDB |

@@ -14,8 +14,11 @@ Kader/Transfers von Transfermarkt gehen nur von einem normalen PC aus (Bot-Schut
 Faellt eine Quelle aus, bleiben die alten Daten stehen und die App zeigt
 den Fehler in der Update-Zentrale an.
 """
+import csv
+import difflib
 import email.utils
 import html
+import io
 import json
 import math
 import os
@@ -558,7 +561,8 @@ def mod_stats(state):
     out = {'season': SEASON, 'updatedAt': iso(NOW), 'teams': {}}
     prev = load('stats.json', {}) or {}
     errors = []
-    for team in TEAMS:
+    # Nur Profis - keine U23-/U19-Statistiken (Regel von Niklas)
+    for team in [t for t in TEAMS if t['key'] == 'profis']:
         try:
             page = tm_get('/x/leistungsdaten/verein/%d/plus/1?reldata=%%26%d' % (team['tmId'], SEASON))
             out['teams'][team['key']] = parse_stats(page)
@@ -877,8 +881,8 @@ def mod_stats_espn(state):
             if len(cands) == 1:
                 return cands[0]
         return None
-    teams_stats = prev.get('teams') or {}
-    old = teams_stats.get('profis') or {}
+    teams_stats = {}  # nur Profis - U23/U19-Statistiken gibt es nicht mehr
+    old = (prev.get('teams') or {}).get('profis') or {}
     new = dict(old)
     changed = matched = 0
     known = {slug(p['name']) for t in (squads.get('teams') or {}).values() for p in t.get('players', [])}
@@ -974,7 +978,7 @@ def mod_stats_espn(state):
         save('squads.json', squads)
     out = dict(prev)
     out.update({'season': SEASON, 'updatedAt': iso(NOW), 'teams': teams_stats, 'espnMinutes': mins,
-                'source': {'profis': 'ESPN', 'u23': 'Transfermarkt', 'u19': 'Transfermarkt'}})
+                'source': {'profis': 'ESPN'}})
     save('stats.json', out)
     if changed:
         state['changes'].add('stats', 'Statistiken aktualisiert bei %d Spielern (ESPN)' % changed, count=changed)
@@ -1144,6 +1148,15 @@ CL_DE = {'Bayern Munich': 'Bayern München', 'Internazionale': 'Inter Mailand', 
 ROUND_DE = {'league-phase': 'Ligaphase', 'knockout-round-playoffs': 'Playoffs', 'round-of-16': 'Achtelfinale',
             'quarterfinals': 'Viertelfinale', 'semifinals': 'Halbfinale', 'final': 'Finale'}
 NEXT_KEY = {'knockout-round-playoffs': 'r16', 'round-of-16': 'qf', 'quarterfinals': 'sf', 'semifinals': 'final', 'final': 'win'}
+# Kurznamen von ESPN (englisch) -> deutsch, fuer die Spielliste der Champions League
+CL_SHORT_DE = {'Inter Milan': 'Inter', 'Man Utd': 'Man United', 'Bayern': 'Bayern', 'Napoli': 'Neapel', 'Slavia Prague': 'Slavia Prag',
+               'Sparta Prague': 'Sparta Prag', 'Club Brugge': 'Brügge', 'Bodo/Glimt': 'Bodø/Glimt', 'Shakhtar': 'Schachtar',
+               'Copenhagen': 'Kopenhagen', 'FC Copenhagen': 'Kopenhagen', 'AEK Athens': 'AEK Athen', 'Olympiacos': 'Olympiakos',
+               'Red Star': 'Roter Stern', 'Crvena Zvezda': 'Roter Stern', 'Sporting': 'Sporting', 'Atlético': 'Atlético',
+               'AS Roma': 'AS Rom', 'Roma': 'AS Rom', 'Juventus': 'Juventus', 'Villarreal': 'Villarreal', 'Real Betis': 'Betis',
+               'Union St.-Gilloise': 'Union SG', 'Dinamo Zagreb': 'Dinamo Zagreb', 'Celtic': 'Celtic', 'Monaco': 'Monaco'}
+DFB_DE = {'first-round': '1. Runde', 'second-round': '2. Runde', 'round-of-16': 'Achtelfinale', 'quarterfinals': 'Viertelfinale',
+          'semifinals': 'Halbfinale', 'final': 'Finale'}
 
 
 def cl_de(name):
@@ -1167,6 +1180,215 @@ def espn_season(lg, season):
                 if ev:
                     out[ev['id']] = ev
     return sorted(out.values(), key=lambda e: e['date'] or '')
+
+
+# Heimische Ligen der CL-Teams (ESPN-Tabellen), damit z. B. PSG nicht nur aus seinen CL-Spielen bewertet wird.
+# Die Bundesliga fehlt bewusst: sie steckt schon Spiel fuer Spiel im Modell. Ohne ESPN-Tabelle (k. A.):
+# Tschechien, Ukraine, Slowakei, Aserbaidschan, Schweiz, Serbien, Kroatien, Polen.
+DOMESTIC = ['eng.1', 'esp.1', 'ita.1', 'fra.1', 'por.1', 'ned.1', 'bel.1', 'tur.1', 'gre.1', 'sco.1', 'aut.1', 'nor.1',
+            'den.1', 'swe.1']
+# Europa League und Conference League: verbinden die Ligen untereinander (wie stark ist die Liga als Ganzes?)
+EU_CUPS = ['uefa.europa', 'uefa.europa.conf']
+
+
+def espn_standings(lg, season=None):
+    """Alle Teams einer ESPN-Tabelle: [{'id', 'names', 'gp', 'gf', 'ga'}]; Ligen mit Meister-/Abstiegsrunde liefern
+    mehrere Gruppen - jedes Team zaehlt einmal."""
+    url = 'https://site.api.espn.com/apis/v2/sports/soccer/%s/standings' % lg + ('?season=%d' % season if season else '')
+    d = http_json(url, timeout=30)
+    rows, seen = [], set()
+    for ch in d.get('children') or []:
+        for e in ((ch.get('standings') or {}).get('entries') or []):
+            t = e.get('team') or {}
+            tid = str(t.get('id'))
+            if tid in seen:
+                continue
+            seen.add(tid)
+            st = {x.get('name'): x.get('value') for x in e.get('stats') or []}
+            rows.append({'id': tid, 'names': [n for n in (t.get('displayName'), t.get('shortDisplayName'), t.get('name'),
+                                                          t.get('location'), t.get('abbreviation')) if n],
+                         'gp': int(st.get('gamesPlayed') or 0), 'gf': int(st.get('pointsFor') or 0), 'ga': int(st.get('pointsAgainst') or 0)})
+    return rows
+
+
+def domestic_tables(season=None, leagues=None):
+    """{liga: {espn_team_id: [spiele, tore, gegentore]}} aller Teams; season=None = laufende Saison."""
+    out = {}
+    for lg in DOMESTIC if leagues is None else leagues:
+        try:
+            rows = {r['id']: [r['gp'], r['gf'], r['ga']] for r in espn_standings(lg, season) if r['gp']}
+        except Exception as e:
+            log('  Tabelle %s%s: %s' % (lg, ' %d' % season if season else '', e))
+            continue
+        if rows:
+            out[lg] = rows
+        time.sleep(0.2)
+    return out
+
+
+# Ergebnisse, xG und Wettquoten (Marktdurchschnitt, Schlussquoten) aus 11 Ligen von football-data.co.uk - frei,
+# zweimal pro Woche aktualisiert, robots.txt erlaubt den Abruf. Die Quoten sind die beste freie Einschaetzung
+# der Spielstaerke: so zaehlt fuer PSG nicht nur das Ergebnis gegen Lyon, sondern auch, wie klar PSG Favorit war.
+FD = 'https://www.football-data.co.uk'
+FD_LEAGUES = {'D1': 'ger.1', 'D2': 'ger.2', 'E0': 'eng.1', 'SP1': 'esp.1', 'I1': 'ita.1', 'F1': 'fra.1', 'N1': 'ned.1',
+              'P1': 'por.1', 'B1': 'bel.1', 'T1': 'tur.1', 'G1': 'gre.1', 'SC0': 'sco.1'}  # 2. Liga: fuer die Pokal-Gegner
+# football-data-Kurznamen, die sich nicht von selbst den ESPN-Namen zuordnen lassen
+FD_ALIAS = {'Paris SG': 'Paris Saint-Germain', "Nott'm Forest": 'Nottingham Forest', 'Man United': 'Manchester United',
+            'Man City': 'Manchester City', 'Ath Madrid': 'Atletico Madrid', 'Ath Bilbao': 'Athletic Club',
+            'Sp Lisbon': 'Sporting CP', 'Sp Braga': 'Braga', "M'gladbach": 'Monchengladbach', 'Ein Frankfurt': 'Eintracht Frankfurt',
+            'FC Koln': 'Cologne', 'Inter': 'Internazionale', 'Milan': 'AC Milan', 'Vallecano': 'Rayo Vallecano',
+            'Sociedad': 'Real Sociedad', 'Betis': 'Real Betis', 'Celta': 'Celta Vigo', 'Espanol': 'Espanyol',
+            'Wolves': 'Wolverhampton Wanderers', 'Olympiakos': 'Olympiacos', 'St. Gilloise': 'Union St.-Gilloise',
+            'Buyuksehyr': 'Istanbul Basaksehir', 'For Sittard': 'Fortuna Sittard', 'Nijmegen': 'NEC',
+            'Guimaraes': 'Vitoria Guimaraes', 'Verona': 'Hellas Verona', 'Hamburg': 'Hamburger SV'}
+
+
+def fd_names(s):
+    return {t for t in slug(s).split('-') if t and t not in GENERIC_TOKENS}
+
+
+def fd_sim(a, b):
+    ta, tb = fd_names(a), fd_names(b)
+    if not ta or not tb:
+        return 0.0
+    over = len(ta & tb) / min(len(ta), len(tb))
+    ratio = difflib.SequenceMatcher(None, ' '.join(sorted(ta)), ' '.join(sorted(tb))).ratio()
+    return max(over, ratio)
+
+
+def fd_map_teams(fd_stats, espn_rows):
+    """football-data-Name -> ESPN-Team-ID. Namensaehnlichkeit plus Abgleich der Bilanz (Spiele, Tore, Gegentore):
+    stimmt die Bilanz exakt, ist die Zuordnung praktisch sicher - auch bei Aufsteigern mit ungewohnten Kurznamen."""
+    cands = []
+    for name, (gp, gf, ga) in fd_stats.items():
+        alias = FD_ALIAS.get(name, name)
+        for r in espn_rows:
+            sim = max(fd_sim(alias, n) for n in r['names'])
+            same = (gp, gf, ga) == (r['gp'], r['gf'], r['ga']) and gp > 0
+            near = abs(gp - r['gp']) <= 1 and abs(gf - r['gf']) + abs(ga - r['ga']) <= 3
+            score = sim + (1.0 if same else 0.3 if near else 0.0)
+            if sim >= 0.5 or (same and sim >= 0.2):
+                cands.append((score, name, r['id']))
+    out, used = {}, set()
+    for score, name, tid in sorted(cands, reverse=True):
+        if name not in out and tid not in used:
+            out[name] = tid
+            used.add(tid)
+    return out
+
+
+def fd_rows(path):
+    raw = http_get(FD + path, timeout=40)
+    return list(csv.DictReader(io.StringIO(raw.lstrip('﻿'))))
+
+
+def fd_date(s):
+    for fmt in ('%d/%m/%Y', '%d/%m/%y'):
+        try:
+            return datetime.strptime((s or '').strip(), fmt).replace(tzinfo=timezone.utc, hour=12)
+        except ValueError:
+            pass
+    return None
+
+
+def fd_num(row, key):
+    try:
+        return float(row.get(key) or '')
+    except ValueError:
+        return None
+
+
+def fd_odds(row):
+    """Marktdurchschnitt (Schlussquoten, sonst Eroeffnung) -> {'ph','pd','pa'(,'line','pover')} ohne Buchmacher-Marge."""
+    for h, d, a in (('AvgCH', 'AvgCD', 'AvgCA'), ('B365CH', 'B365CD', 'B365CA'), ('AvgH', 'AvgD', 'AvgA'), ('B365H', 'B365D', 'B365A')):
+        oh, od, oa = fd_num(row, h), fd_num(row, d), fd_num(row, a)
+        if not (oh and od and oa) or min(oh, od, oa) <= 1.0:
+            continue
+        ph, pd, pa = 1 / oh, 1 / od, 1 / oa
+        s = ph + pd + pa
+        out = {'ph': ph / s, 'pd': pd / s, 'pa': pa / s}
+        for o, u in (('AvgC>2.5', 'AvgC<2.5'), ('B365C>2.5', 'B365C<2.5'), ('Avg>2.5', 'Avg<2.5'), ('B365>2.5', 'B365<2.5')):
+            ov, un = fd_num(row, o), fd_num(row, u)
+            if ov and un and ov > 1 and un > 1:
+                out.update({'line': 2.5, 'pover': (1 / ov) / (1 / ov + 1 / un)})
+                break
+        return out
+    return None
+
+
+def football_data(now_ts):
+    """Beobachtungen fuers Modell aus football-data: Ergebnisse (mit xG gemischt, wo vorhanden) und Wettquoten
+    gespielter und kommender Spiele. -> {'obs', 'leagues' (ESPN-Codes, die geklappt haben), 'info'}"""
+    code = '%02d%02d' % (SEASON % 100, (SEASON + 1) % 100)
+    obs, ok, info = [], set(), {'matches': 0, 'odds': 0, 'xg': 0, 'fixtures': 0, 'unmapped': []}
+    maps = {}
+    for div, lg in FD_LEAGUES.items():
+        try:
+            rows = fd_rows('/mmz4281/%s/%s.csv' % (code, div))
+            espn = espn_standings(lg)
+        except Exception as e:
+            log('  football-data %s: %s' % (div, e))
+            continue
+        played = [r for r in rows if (r.get('FTHG') or '').strip() != '' and (r.get('FTAG') or '').strip() != '']
+        stats = {}
+        for r in played:
+            x, y = int(float(r['FTHG'])), int(float(r['FTAG']))
+            for t, gf, ga in ((r['HomeTeam'], x, y), (r['AwayTeam'], y, x)):
+                s = stats.setdefault(t, [0, 0, 0])
+                s[0] += 1
+                s[1] += gf
+                s[2] += ga
+        teams = {r['HomeTeam'] for r in rows} | {r['AwayTeam'] for r in rows}
+        for t in teams:
+            stats.setdefault(t, [0, 0, 0])
+        m = fd_map_teams({k: tuple(v) for k, v in stats.items()}, espn)
+        miss = sorted(teams - set(m))
+        info['unmapped'] += ['%s:%s' % (div, t) for t in miss]
+        if len(m) < 0.9 * len(teams):
+            log('  football-data %s: nur %d von %d Teams zugeordnet' % (div, len(m), len(teams)))
+            continue
+        maps[div] = m
+        ok.add(lg)
+        done = {id(r) for r in played}
+        for r in rows:
+            h, a, dt = m.get(r['HomeTeam']), m.get(r['AwayTeam']), fd_date(r.get('Date'))
+            if not (h and a and dt):
+                continue
+            w = fcst.decay((now_ts - dt.timestamp()) / 86400.0)
+            if id(r) in done:
+                x, y = float(r['FTHG']), float(r['FTAG'])
+                hx, ax = fd_num(r, 'HxG'), fd_num(r, 'AxG')
+                if hx is not None and ax is not None:
+                    x, y = (x + hx) / 2, (y + ax) / 2  # xG glaettet Zufallstore
+                    info['xg'] += 1
+                obs.append((h, a, x, y, w, False))
+                info['matches'] += 1
+            od = fd_odds(r)
+            if od:
+                lh, la = fcst.market_lambdas(od, quick=True)
+                obs.append((h, a, lh, la, fcst.W_MARKET * w, False))
+                info['odds'] += 1
+        time.sleep(0.3)
+    # Kommende Spiele mit Quoten (gleiche Zuordnung je Liga)
+    try:
+        for r in fd_rows('/fixtures.csv'):
+            m = maps.get(r.get('Div'))
+            h, a = (m.get(r.get('HomeTeam')), m.get(r.get('AwayTeam'))) if m else (None, None)
+            od = fd_odds(r) if h and a else None
+            if od:
+                lh, la = fcst.market_lambdas(od, quick=True)
+                obs.append((h, a, lh, la, fcst.W_MARKET, False))
+                info['fixtures'] += 1
+    except Exception as e:
+        log('  football-data Spielplan: %s' % e)
+    info['leagues'] = len(ok)
+    return {'obs': obs, 'leagues': ok, 'info': info}
+
+
+def league_obs(tables, weight):
+    """Je Team eine zusammengefasste Beobachtung 'Team gegen Liga-Durchschnitt' (virtuelles Team L:<liga>, neutral)."""
+    return [(tid, 'L:' + lg, gf / gp, ga / gp, weight * gp, True)
+            for lg, rows in tables.items() for tid, (gp, gf, ga) in rows.items()]
 
 
 def compact(events):
@@ -1212,10 +1434,37 @@ def build_model(state):
     ts = lambda x: (parse_dt(x) or NOW).timestamp()  # noqa: E731
     now_ts = NOW.timestamp()
     prev_bl, prev_cl = uncompact(store['prev'].get('bl') or []), uncompact(store['prev'].get('cl') or [])
-    obs = fcst.obs_from(events['bl'] + events['cl'], now_ts, 1.0, ts) + fcst.obs_from(prev_bl + prev_cl, now_ts, fcst.W_PREV, ts)
+    # 11 Ligen von football-data (Ergebnisse + xG + Quoten). Klappt die Bundesliga dort, ersetzt sie die ESPN-Bundesliga
+    # im Modell (sonst zaehlten Spiele doppelt); ESPN-Quoten bleiben fuer die CL und fuer die Simulation.
+    fd = football_data(now_ts)
+    bl_fd = 'ger.1' in fd['leagues']
+    obs = fcst.obs_from(([] if bl_fd else events['bl']) + events['cl'], now_ts, 1.0, ts) + fcst.obs_from(prev_bl + prev_cl, now_ts, fcst.W_PREV, ts)
+    obs += fd['obs']
     for mk in market.values():
-        if mk['c'] in ('bl', 'cl'):
+        if mk['c'] == 'cl' or (mk['c'] == 'bl' and not bl_fd):
             obs.append((mk['h'], mk['a'], mk['lh'], mk['la'], fcst.W_MARKET * fcst.decay((now_ts - ts(mk['d'])) / 86400.0), False))
+    # Heimische Ligen + Europa/Conference League: laufende Saison voll, Vorsaison (einmal je Saison geholt) abgeschwaecht
+    if not store['prev'].get('leagues'):
+        store['prev']['leagues'] = domestic_tables(SEASON - 1)
+    if 'eu' not in store['prev']:
+        prev_eu = []
+        for lg in EU_CUPS:
+            try:
+                prev_eu += compact(espn_season(lg, SEASON - 1))
+            except Exception as e:
+                log('  %s %d: %s' % (lg, SEASON - 1, e))
+        if prev_eu:
+            store['prev']['eu'] = prev_eu
+    eu = []
+    for lg in EU_CUPS:
+        try:
+            eu += espn_season(lg, SEASON)
+        except Exception as e:
+            log('  %s: %s' % (lg, e))
+    obs += fcst.obs_from(eu, now_ts, 1.0, ts) + fcst.obs_from(uncompact(store['prev'].get('eu') or []), now_ts, fcst.W_PREV, ts)
+    # laufende Tabellen nur fuer Ligen ohne football-data (dort gibt es jedes Spiel einzeln)
+    obs += league_obs(domestic_tables(leagues=[lg for lg in DOMESTIC if lg not in fd['leagues']]), 1.0)
+    obs += league_obs(store['prev']['leagues'], fcst.W_LEAGUE_PREV)
     seen_bl = {t for e in prev_bl for t in (e['home']['id'], e['away']['id'])}
     seen_cl = {t for e in prev_cl for t in (e['home']['id'], e['away']['id'])}
     prior = {}
@@ -1237,9 +1486,11 @@ def build_model(state):
             names[e['home']['id']] = e['home']['name']
             names[e['away']['id']] = e['away']['name']
     store.update({'market': market, 'updatedAt': iso(NOW), 'params': {'mu': round(fit['mu'], 4), 'h': round(fit['h'], 4), 'obs': len(obs)},
+                  'fd': fd['info'],
                   'ratings': {t: [round(fit['att'][t], 3), round(fit['def'][t], 3), names.get(t, t)] for t in fit['att']}})
     save('model.json', store)
-    fc = {'model': model, 'market': market, 'events': events, 'byId': {e['id']: e for evs in events.values() for e in evs}}
+    fc = {'model': model, 'market': market, 'events': events, 'byId': {e['id']: e for evs in events.values() for e in evs},
+          'fd': fd['info']}
     state['fc'] = fc
     return fc
 
@@ -1261,13 +1512,46 @@ def bvb_tie(cl_events, cl):
     return None
 
 
+def cl_games(events, cl=None):
+    """Alle CL-Spiele der Saison fuer die App: Ligaphase mit Spieltag (aus den Terminen), K.-o.-Runden mit Hin-/Rueckspiel,
+    dazu je K.-o.-Duell die Chance aufs Weiterkommen aus der Prognose."""
+    teams, games = {}, []
+    lp_days, md, last = {}, 0, None
+    for e in sorted((e for e in events if e['slug'] == 'league-phase'), key=lambda e: e['date'] or ''):
+        d = parse_dt(e['date'])
+        if d and (last is None or (d - last).days > 3):
+            md += 1
+        if d:
+            last = d
+        lp_days[e['id']] = md
+    for e in sorted(events, key=lambda e: e['date'] or ''):
+        for t in (e['home'], e['away']):
+            short = t.get('short') or t['name']
+            teams.setdefault(t['id'], {'name': cl_de(t['name']), 'short': CL_SHORT_DE.get(short, short), 'logo': t.get('logo')})
+        games.append({'id': e['id'], 'date': e['date'], 'round': e['slug'] or 'league-phase', 'md': lp_days.get(e['id']),
+                      'leg': e.get('leg'), 'state': e.get('state'), 'h': e['home']['id'], 'a': e['away']['id'],
+                      'hs': e['hs'], 'as': e['as'], 'winner': e.get('winner')})
+    adv = {}
+    if cl:
+        by = {t['espnId']: t for t in cl.get('teams') or []}
+        for r in fcst.CL_ROUNDS:
+            for ids in (cl.get('ties') or {}).get(r) or []:
+                pair = {g['h'] for g in games if g['id'] in ids} | {g['a'] for g in games if g['id'] in ids}
+                for t in pair:
+                    if t in by:
+                        adv.setdefault(r, {})[t] = by[t].get(NEXT_KEY[r])
+    return {'season': SEASON, 'updatedAt': iso(NOW), 'teams': teams, 'games': games, 'advance': adv,
+            'stage': (cl or {}).get('stage') or 'league'}
+
+
 def build_forecasts(state):
     """Bundesliga- und CL-Prognose (15.000 Simulationen) + Zeiten, zu denen Spiele enden (fuer die Laeufe nach jedem Spiel)."""
     fc = build_model(state)
     model, market, ev = fc['model'], fc['market'], fc['events']
     tables = load('tables.json', {}) or {}
     out = {}
-    bl = fcst.bl_forecast(ev['bl'], model, market, sims=15000)
+    nxt = sorted([e for e in ev['bl'] if not e['done'] and ESPN_BVB in (e['home']['id'], e['away']['id'])], key=lambda e: e['date'] or '')
+    bl = fcst.bl_forecast(ev['bl'], model, market, sims=15000, focus=nxt[0]['id'] if nxt else None)
     if bl:
         rows = (tables.get('bl1') or {}).get('rows') or []
         for t in bl['teams']:
@@ -1277,7 +1561,28 @@ def build_forecasts(state):
             t['icon'] = (r.get('icon') if r else None) or t.get('logo')
             t['id'] = r['id'] if r else 'espn-' + t['espnId']
             t['isBVB'] = t['espnId'] == ESPN_BVB
+        wi = bl.get('whatIf')
+        if wi:
+            by = {t['espnId']: t for t in bl['teams']}
+            for side in ('home', 'away'):
+                t = by.get(wi[side]) or {}
+                wi[side] = {'espnId': wi[side], 'team': t.get('short') or t.get('team'), 'icon': t.get('icon'), 'isBVB': wi[side] == ESPN_BVB}
         out['bl'] = bl
+    # Die naechsten BVB-Spiele (alle Wettbewerbe): Sieg/Remis/Niederlage laut Quoten bzw. Modell
+    up = sorted([e for k in ('bl', 'cl', 'dfb') for e in ev[k] if not e['done'] and ESPN_BVB in (e['home']['id'], e['away']['id'])],
+                key=lambda e: e['date'] or '')[:5]
+    comp = {e['id']: k for k in ('bl', 'cl', 'dfb') for e in ev[k]}
+    nl = []
+    for e in up:
+        lh, la = fcst.lam_for(e, model, market)
+        w, d, l = fcst.outcome_probs(fcst.score_matrix(lh, la))
+        home = e['home']['id'] == ESPN_BVB
+        opp = e['away'] if home else e['home']
+        nl.append({'id': e['id'], 'date': e['date'], 'comp': comp.get(e['id']), 'home': home,
+                   'opp': cl_de(ESPN_ALIAS.get(opp['name'], opp['name'])), 'logo': opp.get('logo'),
+                   'win': round(100 * (w if home else l), 1), 'draw': round(100 * d, 1), 'loss': round(100 * (l if home else w), 1),
+                   'odds': e['id'] in market})
+    out['next'] = nl
     ucl = (tables.get('ucl') or {}).get('rows') or []
     order = [str(r['id']).replace('espn-', '') for r in sorted(ucl, key=lambda r: r['pos'])] if ucl else None
     cl = fcst.cl_forecast(ev['cl'], model, market, official_order=order, sims=15000)
@@ -1290,15 +1595,41 @@ def build_forecasts(state):
             t['isBVB'] = t['espnId'] == ESPN_BVB
         cl['tie'] = bvb_tie(ev['cl'], cl)
         out['cl'] = cl
+    try:
+        save('cl.json', cl_games(ev['cl'], cl))
+    except Exception as e:
+        log('  cl.json: %s' % e)
+    # DFB-Pokal: alle Runden bis zum Finale, nach jedem Pokalspiel neu
+    dfb = fcst.dfb_forecast(ev.get('dfb') or [], model, market, sims=15000)
+    if dfb:
+        for t in dfb['teams']:
+            t['team'] = cl_de(ESPN_ALIAS.get(t['name'], t['name']))
+            t['icon'] = t.get('logo')
+            t['isBVB'] = t['espnId'] == ESPN_BVB
+        mine = [e for e in ev['dfb'] if e['slug'] == dfb['round'] and ESPN_BVB in (e['home']['id'], e['away']['id'])]
+        if mine:
+            e = mine[0]
+            home = e['home']['id'] == ESPN_BVB
+            opp = e['away'] if home else e['home']
+            score = None
+            if e['done']:
+                score = '%d:%d' % ((e['hs'], e['as']) if home else (e['as'], e['hs']))
+            dfb['tie'] = {'round': dfb['round'], 'label': DFB_DE.get(dfb['round'], dfb['round']), 'date': e['date'], 'home': home,
+                          'opp': {'name': cl_de(ESPN_ALIAS.get(opp['name'], opp['name'])), 'logo': opp.get('logo')},
+                          'score': score, 'won': (e.get('winner') == ESPN_BVB) if e['done'] else None}
+        out['dfb'] = dfb
     ends = set()
-    for key in ('bl', 'cl'):
+    for key in ('bl', 'cl', 'dfb'):  # nach jedem Spiel in allen drei Wettbewerben rechnet ein kurzer Lauf neu
         for e in ev[key]:
             ko = parse_dt(e['date'])
             if ko and not e['done'] and NOW - timedelta(hours=4) < ko < NOW + timedelta(days=14):
                 ends.add(iso(ko + timedelta(minutes=115)))
     out['ends'] = sorted(ends)[:150]
-    out['info'] = {'odds': len(market), 'oddsOpen': sum(1 for e in fc['byId'].values() if not e['done'] and e['id'] in market),
-                   'home': round(model.h, 3), 'teams': len(model.att), 'sims': 15000}
+    fdi = fc.get('fd') or {}
+    out['info'] = {'odds': len(market) + fdi.get('odds', 0) + fdi.get('fixtures', 0),
+                   'oddsOpen': sum(1 for e in fc['byId'].values() if not e['done'] and e['id'] in market),
+                   'home': round(model.h, 3), 'teams': len(model.att), 'sims': 15000,
+                   'leagues': fdi.get('leagues', 0), 'matches': fdi.get('matches', 0), 'xg': fdi.get('xg', 0)}
     return out
 
 
@@ -1320,6 +1651,9 @@ def mod_season(state):
         out['forecast'] = fx.get('bl') or season_forecast(cur)
         if fx.get('cl'):
             out['cl'] = fx['cl']
+        out['next'] = fx.get('next') or []
+        if fx.get('dfb'):
+            out['dfb'] = fx['dfb']
         out['nextEnds'] = fx['ends']
         out['model'] = fx['info']
     except Exception as e:
@@ -1986,6 +2320,25 @@ def fetch_news():
             items.append({'title': title, 'outlet': outlet, 'url': it.findtext('link'),
                           'date': iso(dt), 'lang': lang})
         time.sleep(1)
+    # kicker-Newsfeed zum BVB (offizieller RSS-Feed von kicker; die Kader- und Statistikseiten sperrt kicker fuer Server)
+    try:
+        root = ET.fromstring(http_get(KICKER_FEED, retries=1))
+        for it in root.iter('item'):
+            title = text(it.findtext('title') or '')
+            key = slug(title)[:90]
+            if not title or key in seen:
+                continue
+            try:
+                dt = email.utils.parsedate_to_datetime(it.findtext('pubDate'))
+            except Exception:
+                dt = NOW
+            if dt < cutoff:
+                continue
+            seen.add(key)
+            items.append({'title': title, 'outlet': 'kicker', 'url': it.findtext('link'), 'date': iso(dt), 'lang': 'de',
+                          'bvb': True, 'desc': text(it.findtext('description') or '')[:280]})
+    except Exception as e:
+        log('  kicker-Feed: %s' % e)
     items.sort(key=lambda x: x['date'], reverse=True)
     return items
 
@@ -2186,7 +2539,8 @@ def build_prompt(headlines, squads, stories, grounded):
     known = [{'key': s['key'], 'player': s['player'], 'direction': s['direction'],
               'status': s['status'], 'otherClub': (s.get('otherClub') or {}).get('name')}
              for s in stories[:40]]
-    lines = ['%d | %s | %s | %s' % (i, h['date'][:10], h['outlet'], h['title']) for i, h in enumerate(headlines[:120])]
+    lines = ['%d | %s | %s | %s' % (i, h['date'][:10], h['outlet'], h['title'] + (' – ' + h['desc'] if h.get('desc') else ''))
+             for i, h in enumerate(headlines[:120])]
     task = (
         'Du bist der Transfer-Redakteur einer Borussia-Dortmund-Fan-App. Heute ist %s. Laufende Saison: %s '
         '(Sommer-Transferfenster %s und Winter-Transferfenster %s). Wechsel aus früheren Saisons gehören nicht mehr dazu.\n\n'
@@ -2258,7 +2612,7 @@ def mod_news(state):
     shown = []
     for h in headlines_all:
         tier = outlet_tier(h['outlet'])
-        if tier and bvb_re.search(h['title']):
+        if tier and (h.get('bvb') or bvb_re.search(h['title'])):
             shown.append(dict(h, tier=tier))
     old_titles = {slug(h['title'])[:90] for h in prev.get('headlines') or []}
     new_heads = [h for h in shown if slug(h['title'])[:90] not in old_titles]
@@ -2274,7 +2628,7 @@ def mod_news(state):
     else:
         models = gemini_models(key) if key else []
         state['gemini_models'] = models
-        candidates = ([h for h in headlines_all if bvb_re.search(h['title'])] or headlines_all)[:120]
+        candidates = ([h for h in headlines_all if h.get('bvb') or bvb_re.search(h['title'])] or headlines_all)[:120]
         attempts = []
         gem['attempts'] = attempts
         pg = prev.get('gemini') or {}
@@ -2635,6 +2989,222 @@ def apply_injuries(injury_news, state):
     return changed
 
 
+# --------------------------------------------------------------------------- FotMob: Verletzungen, Vertraege, Noten, U19-Kader
+# FotMob erlaubt das Lesen seiner Seiten (robots.txt sperrt nur /api) - die Daten stehen als JSON in jeder Seite.
+FOTMOB = 'https://www.fotmob.com'
+FM_TEAMS = {'profis': (9789, 'borussia-dortmund'), 'u19': (394130, 'borussia-dortmund-u19')}
+FM_IMG = 'https://images.fotmob.com/image_resources/playerimages/%s.png'
+FM_GROUP = {'keeper': 'Torwart', 'defender': 'Abwehr', 'midfielder': 'Mittelfeld', 'attacker': 'Sturm'}
+FM_POS = {'GK': 'Torwart', 'CB': 'Innenverteidiger', 'LB': 'Linker Verteidiger', 'RB': 'Rechter Verteidiger',
+          'LWB': 'Linker Verteidiger', 'RWB': 'Rechter Verteidiger', 'CDM': 'Defensives Mittelfeld', 'DM': 'Defensives Mittelfeld',
+          'CM': 'Zentrales Mittelfeld', 'CAM': 'Offensives Mittelfeld', 'AM': 'Offensives Mittelfeld', 'LM': 'Linkes Mittelfeld',
+          'RM': 'Rechtes Mittelfeld', 'LW': 'Linksaußen', 'RW': 'Rechtsaußen', 'ST': 'Mittelstürmer', 'CF': 'Mittelstürmer',
+          'SS': 'Hängende Spitze'}
+FM_MONTHS = {'January': 'Januar', 'February': 'Februar', 'March': 'März', 'May': 'Mai', 'June': 'Juni', 'July': 'Juli',
+             'October': 'Oktober', 'December': 'Dezember'}
+KICKER_FEED = 'https://newsfeed.kicker.de/team/borussia-dortmund'
+
+
+def fm_page(path):
+    page = http_get(FOTMOB + path, timeout=40)
+    m = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', page, re.S)
+    if not m:
+        raise RuntimeError('FotMob: keine Daten in %s' % path)
+    return json.loads(m.group(1))['props']['pageProps']
+
+
+def fm_team(tid, name):
+    fb = fm_page('/teams/%d/squad/%s' % (tid, name)).get('fallback') or {}
+    t = fb.get('team-%d' % tid) or next((v for k, v in fb.items() if k.startswith('team-')), {})
+    return [p for g in ((t.get('squad') or {}).get('squad') or []) if g.get('title') != 'coach' for p in g.get('members') or []]
+
+
+def fm_return_de(s):
+    """'Mid November 2026' -> 'Mitte November 2026', 'About 1-2 weeks' -> 'ca. 1–2 Wochen'."""
+    s = (s or '').strip()
+    if not s:
+        return None
+    for a, b in ((r'^Early ', 'Anfang '), (r'^Mid ', 'Mitte '), (r'^Late ', 'Ende '), (r'^About ', 'ca. '), (r'(\d)-(\d)', r'\1–\2'),
+                 (r'\b1 weeks?\b', '1 Woche'), (r'\bweeks?\b', 'Wochen'), (r'\b1 days?\b', '1 Tag'), (r'\bdays?\b', 'Tage'),
+                 (r'\b1 months?\b', '1 Monat'), (r'\bmonths?\b', 'Monate'), (r'^Doubtful$', 'fraglich'), (r'^Unknown$', 'unbekannt'),
+                 (r'^Out for the season$', 'Saison-Aus')):
+        s = re.sub(a, b, s)
+    for en, de in FM_MONTHS.items():
+        s = re.sub(r'\b%s\b' % en, de, s)
+    return s
+
+
+def fm_matcher(players):
+    """FotMob-Spieler -> Spieler im App-Kader: Name, eindeutiger Nachname, Geburtstag oder Rueckennummer."""
+    by_slug = {slug(p['name']): p for p in players}
+
+    def match(m):
+        s = slug(m.get('name') or '')
+        if s in by_slug:
+            return by_slug[s]
+        last = s.split('-')[-1] if s else ''
+        cands = [p for p in players if last and slug(p['name']).split('-')[-1] == last]
+        if len(cands) == 1:
+            return cands[0]
+        dob = (m.get('dateOfBirth') or '')[:10]
+        hit = [p for p in (cands or players) if dob and p.get('birth') == dob]
+        if len(hit) == 1:
+            return hit[0]
+        num = m.get('shirtNumber')
+        hit = [p for p in cands if num and str(p.get('number') or '') == str(num)]
+        return hit[0] if len(hit) == 1 else None
+    return match
+
+
+def fm_fill(p, m):
+    """Fehlende Grunddaten aus FotMob ergaenzen (nichts ueberschreiben, was schon da ist)."""
+    changed = False
+    if not p.get('birth') and m.get('dateOfBirth'):
+        p['birth'] = m['dateOfBirth'][:10]
+        changed = True
+    if not p.get('number') and m.get('shirtNumber'):
+        p['number'] = str(m['shirtNumber'])
+        changed = True
+    if p.get('height') in (None, '', '-') and m.get('height'):
+        p['height'] = '%d,%02dm' % (m['height'] // 100, m['height'] % 100)
+        changed = True
+    if p.get('fm') != m.get('id'):
+        p['fm'] = m.get('id')
+        changed = True
+    return changed
+
+
+def mod_fotmob(state):
+    """Profis: Verletzungen mit Rueckkehr-Prognose, FotMob-Noten, Vertragsende (rotierend von den Spielerseiten).
+    U19: Kader aktuell halten (Neue rein, wer 3 Tage fehlt raus) - ohne Statistiken (Regel von Niklas)."""
+    squads = load('squads.json') or {}
+    teams = squads.get('teams') or {}
+    if not teams.get('profis'):
+        raise RuntimeError('keine Kaderdaten')
+    changed, notes, errors = 0, [], []
+    # Profis
+    members = fm_team(*FM_TEAMS['profis'])
+    if len(members) < 15:
+        raise RuntimeError('FotMob lieferte nur %d Profis' % len(members))
+    players = teams['profis']['players']
+    match = fm_matcher(players)
+    matched = 0
+    fit_since = (NOW - timedelta(days=1)).strftime('%Y-%m-%d')
+    ai_old = (NOW - timedelta(days=7)).strftime('%Y-%m-%d')
+    for m in members:
+        p = match(m)
+        if not p:
+            continue
+        matched += 1
+        changed += fm_fill(p, m)
+        rating = m.get('rating')
+        if rating and p.get('fmRating') != rating:
+            p['fmRating'] = rating
+            changed += 1
+        inj = m.get('injury')
+        if inj:
+            ret = fm_return_de(inj.get('expectedReturn'))
+            old = p.get('fmInjury') or {}
+            if old.get('return') != ret or not old:
+                p['fmInjury'] = {'return': ret, 'since': old.get('since') or TODAY}
+                if not old:
+                    notes.append('Verletzt laut FotMob: %s%s' % (p['name'], ' (Rückkehr: %s)' % ret if ret else ''))
+                changed += 1
+            p.pop('fmFit', None)
+        else:
+            if p.pop('fmInjury', None) is not None:
+                notes.append('Wieder fit laut FotMob: %s' % p['name'])
+                changed += 1
+            if not p.get('fmFit'):
+                p['fmFit'] = TODAY
+                changed += 1
+            # FotMob meldet seit mindestens einem Tag keine Verletzung: alte Transfermarkt- und KI-Eintraege raeumen
+            if p['fmFit'] <= fit_since and p.get('absences'):
+                keep = [a for a in p['absences'] if a.get('type') != 'injury' or (a.get('ai') and (a.get('since') or TODAY) > ai_old)]
+                if len(keep) != len(p['absences']):
+                    p['absences'] = keep
+                    changed += 1
+    if matched < 0.6 * len(players):
+        errors.append('nur %d von %d Profis bei FotMob gefunden' % (matched, len(players)))
+    # Vertragsende von den Spielerseiten - je Lauf hoechstens 8 Spieler, die am laengsten nicht geprueft wurden
+    due = sorted([p for p in players if p.get('fm')], key=lambda p: p.get('fmChecked') or '')[:8]
+    for p in due:
+        try:
+            pp = fm_page('/players/%s/%s' % (p['fm'], slug(p['name'])))
+            data = (pp.get('fallback') or {}).get('player:%s' % p['fm']) or pp.get('data') or {}
+            end = ((data.get('contractEnd') or {}).get('utcTime') or '')[:10]
+            if re.match(r'\d{4}-\d{2}-\d{2}$', end) and end >= TODAY and end != p.get('contract'):
+                if p.get('contract') and end > p['contract']:
+                    p['contractNote'] = 'verlängert bis %s (FotMob)' % end[:4]
+                notes.append('Vertrag laut FotMob: %s bis %s%s' % (p['name'], end[:4], ' (vorher %s)' % p['contract'][:4] if p.get('contract') else ''))
+                p['contract'] = end
+                changed += 1
+            p['fmChecked'] = TODAY
+        except Exception as e:
+            errors.append('%s: %s' % (p['name'], str(e)[:80]))
+        time.sleep(1.5)
+    # U19: Kader abgleichen (keine Statistiken). Wer bei FotMob im Profi-Kader steht, zaehlt als "noch da".
+    try:
+        changed += fm_sync_youth(teams, 'u19', notes, {slug(m.get('name') or '') for m in members})
+    except Exception as e:
+        errors.append('U19: %s' % str(e)[:120])
+    if changed:
+        squads['fmUpdatedAt'] = iso(NOW)
+        save('squads.json', squads)
+    for n in notes[:20]:
+        state['changes'].add('squad', n)
+    return {'ok': True, 'count': matched, 'warning': '; '.join(errors) or None}
+
+
+def fm_sync_youth(teams, key, notes, also=()):
+    team = teams.get(key)
+    if not team:
+        return 0
+    members = fm_team(*FM_TEAMS[key])
+    if len(members) < 18:
+        raise RuntimeError('FotMob-Kader unvollständig (%d Spieler)' % len(members))
+    players = team['players']
+    match = fm_matcher(players)
+    elsewhere = {slug(p['name']) for k, t in teams.items() if k != key for p in t.get('players', [])}
+    changed, seen = 0, set()
+    for m in members:
+        p = match(m)
+        if p:
+            seen.add(p['id'])
+            changed += fm_fill(p, m)
+            if m.get('shirtNumber') and str(m['shirtNumber']) != str(p.get('number') or ''):
+                p['number'] = str(m['shirtNumber'])
+                changed += 1
+            if p.pop('fmMiss', None):
+                changed += 1
+            continue
+        if slug(m.get('name') or '') in elsewhere or not m.get('name'):
+            continue
+        pos = FM_POS.get(((m.get('positionIdsDesc') or '').split(',') or [''])[0].strip())
+        grp = FM_GROUP.get(((m.get('role') or {}).get('key') or '').replace('_long', ''))
+        p = {'id': 'fm-%s' % m['id'], 'name': m['name'], 'img': FM_IMG % m['id'], 'position': pos or grp, 'group': grp,
+             'number': str(m['shirtNumber']) if m.get('shirtNumber') else None, 'captain': False, 'absences': [],
+             'birth': (m.get('dateOfBirth') or '')[:10] or None, 'age': m.get('age'), 'flags': [], 'joined': TODAY,
+             'fm': m.get('id'), 'fmAdded': True}
+        players.append(p)
+        seen.add(p['id'])
+        notes.append('Neu im %s-Kader (FotMob): %s' % (team.get('name') or key, m['name']))
+        changed += 1
+    for p in list(players):
+        if p['id'] in seen or slug(p['name']) in also:
+            continue
+        miss = p.get('fmMiss') or {'n': 0, 'd': ''}
+        if miss['d'] != TODAY:
+            miss = {'n': miss['n'] + 1, 'd': TODAY}
+            p['fmMiss'] = miss
+            changed += 1
+        if miss['n'] >= 3:
+            players.remove(p)
+            notes.append('Nicht mehr im %s-Kader (FotMob): %s' % (team.get('name') or key, p['name']))
+    team['count'] = len(players)
+    return changed
+
+
 TSDB = 'https://www.thesportsdb.com/api/v1/json/123'
 
 
@@ -2732,7 +3302,8 @@ MODULES = [
     ('matches', 'Spiele & Tabelle (OpenLigaDB)', mod_matches, 'server'),
     ('season', 'Saison: Fieberkurve, Prognose & Torjäger (OpenLigaDB)', mod_season, 'server'),
     ('stats_espn', 'Statistiken & Kader (ESPN)', mod_stats_espn, 'server'),
-    ('news', 'Transfer-News, Verletzungen & Verträge (Gemini)', mod_news, 'server'),
+    ('fotmob', 'Verletzungen, Verträge, Noten & U19-Kader (FotMob)', mod_fotmob, 'server'),
+    ('news', 'Transfer-News, Verletzungen & Verträge (Gemini + kicker)', mod_news, 'server'),
     ('matchcenter', 'Spieltag-Zentrale: Vor- und Spielberichte (Gemini)', mod_matchcenter, 'server'),
     # Transfermarkt direkt - sperrt Server per Bot-Schutz, klappt nur von einem normalen Internetanschluss
     ('squads', 'Kader & Verträge (Transfermarkt)', mod_squads, 'pc'),
@@ -2750,7 +3321,7 @@ def main():
     elif not args:
         kind = 'pc'
     else:
-        kind = 'server' if all(k in ('matches', 'season', 'stats_espn', 'news', 'matchcenter', 'all') for k in args) else 'pc'
+        kind = 'server' if all(k in ('matches', 'season', 'stats_espn', 'fotmob', 'news', 'matchcenter', 'all') for k in args) else 'pc'
     status_file = 'status.json' if kind == 'server' else 'status-pc.json'
     prev_status = load(status_file, {}) or {}
     modules = [m for m in MODULES if m[3] == kind or 'all' in args]

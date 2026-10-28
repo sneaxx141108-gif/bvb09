@@ -1498,3 +1498,91 @@ html, body { transition: background-color 1.2s ease; }
 .tmk-go svg { width: 18px; height: 18px; stroke: currentColor; }
 .tmk:active .tmk-go { transform: translate(2px, -2px) scale(1.08); }
 @keyframes tmkDrift { from { transform: translateX(0); } to { transform: translateX(-26px); } }
+
+/* Saison: Titelrennen, Was wäre wenn, nächste Spiele, Prognose-Tabellen, Erklärung */
+.race-head { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; padding-bottom: 6px; }
+.race-head .rt { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; font-weight: 800; }
+.race-head .rt.r { justify-content: flex-end; }
+.race-head .vs { font-family: var(--display); font-weight: 900; font-size: 15px; color: var(--faint); }
+.race-row { display: grid; grid-template-columns: 76px minmax(0, 1fr) 76px; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--hair); }
+.race-row:last-of-type { border-bottom: 0; }
+.race-row b { font-family: var(--display); font-weight: 900; font-size: 20px; line-height: 1; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.race-row b.r { text-align: right; }
+.race-row b.win { color: var(--y); }
+.race-row b.r.win { color: var(--text); }
+.race-row span { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; text-align: center; color: var(--muted); }
+.race-why { margin-top: 10px; padding: 12px 14px; border-radius: 16px; background: rgba(253, 225, 0, .07); box-shadow: inset 0 0 0 1px rgba(253, 225, 0, .18); font-size: 13px; line-height: 1.55; }
+.wi-match { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 14px; padding-bottom: 6px; }
+.wi-row { display: grid; grid-template-columns: minmax(0, 1fr) 72px 64px; align-items: center; gap: 8px; padding: 11px 0; border-bottom: 1px solid var(--hair); }
+.wi-row:last-of-type { border-bottom: 0; }
+.wi-l { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wi-l b { font-size: 14px; }
+.wi-l span { font-size: 11px; font-weight: 600; color: var(--muted); }
+.wi-v { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.wi-v b { font-family: var(--display); font-weight: 900; font-size: 20px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wi-v span { font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+.wi-row.win .wi-v b { color: var(--y); }
+.wi-row.loss .wi-v b { color: var(--muted); }
+.wdl { display: flex; gap: 2px; height: 8px; border-radius: 6px; overflow: hidden; }
+.wdl i { display: block; min-width: 3px; }
+.wdl .w { background: var(--y); }
+.wdl .d { background: rgba(255, 255, 255, .22); }
+.wdl .l { background: var(--loss); }
+.wdl-n { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; font-weight: 800; color: var(--faint); font-variant-numeric: tabular-nums; }
+.table.fc-t { font-size: 12px; }
+.table.fc-t th, .table.fc-t td { padding-left: 4px; padding-right: 4px; }
+.table.fc-t th { font-size: 9px; letter-spacing: .06em; }
+.table.fc-t td:first-child { width: 24px; }
+.table.fc-t td:last-child { font-size: 14px; }
+.table.fc-t .tm { gap: 7px; }
+.table.fc-t .tm span { max-width: 104px; }
+.more-btn { display: block; width: 100%; margin-top: 4px; padding: 12px; border: 0; border-top: 1px solid var(--hair); background: none; color: var(--y); font-size: 13px; font-weight: 800; }
+.explain { margin-top: 22px; }
+.explain summary { display: flex; align-items: center; gap: 10px; list-style: none; cursor: pointer; }
+.explain summary::-webkit-details-marker { display: none; }
+.explain summary b { flex: 1; font-size: 15px; }
+.explain summary svg { width: 18px; height: 18px; color: var(--muted); transition: transform .3s var(--ease); }
+.explain[open] summary svg { transform: rotate(180deg); }
+.explain ul { display: flex; flex-direction: column; gap: 9px; margin: 12px 0 2px; padding-left: 18px; font-size: 13px; line-height: 1.55; color: var(--muted); }
+.explain li b { color: var(--text); }
+
+/* Champions League: alle Spiele und K.-o.-Runde */
+.cl-day { margin-top: 16px; }
+.cl-day > .eyebrow { margin: 0 4px 8px; }
+.clg { padding: 10px 0; border-bottom: 1px solid var(--hair); }
+.clg:last-child { border-bottom: 0; }
+.clg-row { display: grid; grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1fr); align-items: center; gap: 8px; }
+.clg-t { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; font-weight: 700; }
+.clg-t.h { justify-content: flex-end; text-align: right; }
+.clg-t.lost { opacity: .55; }
+.clg-s { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.clg-s b { font-family: var(--display); font-weight: 900; font-size: 20px; line-height: 1; font-variant-numeric: tabular-nums; }
+.clg-s b.clg-time { font-size: 15px; color: var(--muted); }
+.clg-live { font-size: 10px; font-weight: 800; color: var(--loss); }
+.clg-sub { margin-top: 5px; text-align: center; font-size: 11px; font-weight: 600; color: var(--faint); }
+.clg.me .clg-t { color: var(--y); }
+.clg.live .clg-s b { color: var(--loss); }
+.ko-list { display: flex; flex-direction: column; gap: 10px; }
+.ko-tie { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; }
+.ko-tie.live { box-shadow: inset 0 0 0 1px rgba(255, 90, 78, .45), var(--lift); }
+.ko-tie > .eyebrow { margin-bottom: 4px; }
+.ko-team { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 14px; font-weight: 700; min-width: 0; }
+.ko-team b { font-family: var(--display); font-weight: 900; font-size: 22px; line-height: 1; font-variant-numeric: tabular-nums; min-width: 18px; text-align: right; }
+.ko-team.lost { opacity: .5; }
+.ko-team.me .grow { color: var(--y); }
+.ko-p { font-size: 12px; font-weight: 800; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ko-pos { width: 20px; flex: none; font-size: 12px; font-weight: 800; color: var(--faint); text-align: right; }
+.ko-vs { margin: 2px 0 2px 30px; font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+.ko-legs { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--hair); font-size: 11px; font-weight: 600; color: var(--muted); }
+.ko-legs b { color: var(--text); font-weight: 800; }
+.ko-flat .ko-team { border-bottom: 1px solid var(--hair); padding: 9px 0; }
+.ko-flat .ko-team:last-child { border-bottom: 0; }
+
+/* Meine Elf: eigene Formationen */
+.elf-tools { display: flex; gap: 8px; margin-top: 12px; }
+.btn.sm { min-height: 44px; font-size: 13px; border-radius: 14px; padding: 0 14px; }
+.pitch.editing { touch-action: none; box-shadow: inset 0 0 0 2px var(--y), 0 0 30px rgba(253, 225, 0, .18); }
+.pitch.editing .slot { cursor: grab; touch-action: none; }
+.pitch.editing .slot .sl-c { box-shadow: 0 0 0 2px var(--y), 0 0 0 6px rgba(253, 225, 0, .18); }
+.pitch .slot.drag { z-index: 5; cursor: grabbing; }
+.pitch .slot.drag .sl-c { transform: scale(1.15); }

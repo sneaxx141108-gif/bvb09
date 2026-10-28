@@ -6,7 +6,7 @@ on:
     # GitHub rechnet in UTC. Deshalb stehen hier die Zeiten fuer Sommer- UND Winterzeit;
     # der Schritt "Uhrzeit pruefen" (scripts/gate.py) laesst nur die jeweils passenden Laeufe durch.
     # Der stuendliche Eintrag arbeitet an BVB-Spieltagen (7 Std. vor bis 4 Std. nach dem Anpfiff) und kurz nach
-    # jedem Bundesliga- und Champions-League-Spiel (dann nur Spiele, Prognosen, Statistiken, Spieltag-Zentrale).
+    # jedem Bundesliga-, Champions-League- und DFB-Pokal-Spiel (dann nur Spiele, Prognosen, Statistiken, Spieltag-Zentrale).
     - cron: '17 6 * * *'
     - cron: '17 7 * * *'
     - cron: '17 12 * * *'
