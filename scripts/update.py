@@ -2693,6 +2693,16 @@ def mod_news(state):
                 if grounded and all('HTTP 429' in a for a in attempts if '(Suche)' in a) and any('(Suche)' in a for a in attempts):
                     gem['noGroundingUntil'] = iso(NOW + timedelta(days=3))
         gem['headlinesAnalyzed'] = len(candidates)
+        # Ernstfall-Test: einmal im Monat (schlaegt er fehl: bei jedem Lauf) bekommt die Ersatz-KI dieselbe Aufgabe wie
+        # Gemini - nur zum Vergleich, uebernommen wird ihr Ergebnis nicht
+        drill = pg.get('drill') or {}
+        backup_used = str(gem.get('model') or '').split(':')[0] in backups_set()
+        if backups_set() and result is not None and not backup_used and (
+                not drill.get('ok') or (drill.get('at') or '') < iso(NOW - timedelta(days=30))):
+            drill = backup_drill(candidates, stories, result, state)
+            log('  Ernstfall-Test Ersatz-KI: %s' % json.dumps(drill, ensure_ascii=False))
+        if drill:
+            gem['drill'] = drill
     injury_news = prev.get('injuryNews') or []
     briefing = prev.get('briefing')
     mood = prev.get('mood')
@@ -2741,6 +2751,23 @@ def mod_news(state):
                        'mood': mood, 'moodHistory': mood_hist[-90:]})
     state['gemini'] = gem
     return {'ok': True, 'count': len(stories), 'warning': gem['error'] if not gem['used'] else None}
+
+
+def backup_drill(candidates, stories, gemini_result, state):
+    """Die Ersatz-KI bekommt die komplette News-Aufgabe (ohne Google-Suche) - verglichen wird mit dem, was Gemini fand."""
+    t0 = time.time()
+    try:
+        prompt = build_prompt(candidates, state.get('squads') or load('squads.json'), stories, False)
+        data, model, _ = backup_call(prompt)
+    except Exception as e:
+        return {'at': iso(NOW), 'ok': False, 'error': str(e)[:200]}
+
+    def players(res):
+        return {slug(s.get('player') or '') for s in (res.get('stories') or []) if isinstance(s, dict) and s.get('player')}
+    a, b = players(gemini_result), players(data)
+    return {'at': iso(NOW), 'ok': isinstance(data.get('stories'), list), 'model': model, 'seconds': round(time.time() - t0),
+            'stories': len(b), 'gemini': len(a), 'overlap': len(a & b), 'injuries': len(data.get('injuries') or []),
+            'briefing': bool(str(data.get('briefing') or '').strip())}
 
 
 def merge_stories(stories, found, headlines, state):
