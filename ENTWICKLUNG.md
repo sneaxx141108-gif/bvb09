@@ -47,6 +47,15 @@ erledigte abhaken, danach committen und pushen (siehe `CLAUDE.md`).
 - [x] Committen, pushen. Git ist jetzt auf dem Laptop installiert, das Repository liegt unter `Dokumente\bvb09`.
 - Offen zur Entscheidung (Niklas): U19-Statistiken wären mit FotMob jetzt aktuell möglich – bisher bewusst ausgeblendet.
 
+## Auftrag für den 29.10.2026 (Niklas) – in dieser Reihenfolge
+
+- [ ] **Zuerst:** Storys → Spielerprofile: Bug bei der Positionierung fixen, danach deutlich schöner machen.
+- [ ] **Titelrennen (Spiele → Saison):** jeden Verein mit dem BVB vergleichen können (wie jetzt Bayern), Gegner wählbar.
+      **„Was wäre wenn“ komplett entfernen.**
+- [ ] **Alles im Saison-Tab** muss sich nach jedem Spiel aktualisieren (z. B. Prognose-Tabelle) – alles prüfen.
+- [ ] **CL-Wahrscheinlichkeiten:** Niklas versteht nicht, warum PSG (für ihn das stärkste Team) nur Platz 5 der
+      Titel-Favoriten ist – Ursachen prüfen (Ligue-1-Form, Liga-Stärke, Gewichtung CL/Vorsaison), verbessern, erklären.
+
 ## Langzeit-Test vom 28.10.2026 (3 Saisons)
 
 - Saisonwechsel simuliert (Daten als Vorsaison markiert): alle 6 Server-Module ok, alles auf neue Saison umgestellt,
