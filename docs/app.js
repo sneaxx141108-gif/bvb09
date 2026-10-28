@@ -994,7 +994,7 @@
     const topOut = [...outs].sort((a, b) => (b.feeValue || 0) - (a.feeValue || 0))[0];
     const loans = outs.filter((x) => x.loan);
     const row = (x, dir) => `<a class="li" ${x.id && findPlayer('profis', x.id) ? `href="#/spieler/profis/${x.id}"` : ''}>${img(pimg(x.img, 'medium'), 'avatar sm', x.name, initials(x.name))}
-      <span class="grow"><div class="t ellipsis">${esc(x.name)}${x.news ? ' <span class="chip ok sm">Neu</span>' : ''}</div><div class="s row" style="gap:6px">${crest(x.club, 'crest xs')}<span class="ellipsis">${dir === 'in' ? 'von' : 'zu'} ${esc((x.club || {}).name || UNK)}${x.news ? ' · laut ' + esc(x.news) : ''}</span></div></span>
+      <span class="grow"><div class="t ellipsis">${esc(x.name)}${x.news ? ' <span class="chip ok sm">Neu</span>' : ''}</div><div class="s row" style="gap:6px">${crest(x.club, 'crest xs')}<span class="ellipsis">${dir === 'in' ? 'von' : 'zu'} ${esc((x.club || {}).name || UNK)}${x.news || x.source ? ' · laut ' + esc(x.news || x.source) : ''}</span></div></span>
       <span class="v ${x.feeValue ? '' : 'faint'}" style="font-weight:${x.feeValue ? 800 : 600}">${esc(x.feeValue ? money(x.feeValue, { short: 1 }) : String(x.fee && x.fee !== '-' && x.fee !== '?' ? x.fee : UNK).replace(/^Leihgebühr:\s*/, 'Leihe '))}</span></a>`;
     let out = `<section class="card" style="margin-top:14px;display:flex;flex-direction:column;gap:14px">
       <div class="row" style="justify-content:space-between;align-items:flex-end"><span><span class="eyebrow">Einnahmen</span><div class="num green" style="font-size:30px;line-height:1.1">${countEl(income, 'moneyS')}</div><span class="faint" style="font-size:11px;font-weight:600">${outs.length} Abgänge</span></span>
@@ -1008,7 +1008,7 @@
     out += `<section class="sec"><div class="sec-h"><h2>Zugänge</h2><span class="note">${ins.length}</span></div><div class="card flat"><div class="list">${ins.map((x) => row(x, 'in')).join('') || '<p class="muted" style="padding:12px 0">Keine</p>'}</div></div></section>`;
     out += `<section class="sec"><div class="sec-h"><h2>Abgänge</h2><span class="note">${outs.length}</span></div><div class="card flat"><div class="list">${outs.map((x) => row(x, 'out')).join('') || '<p class="muted" style="padding:12px 0">Keine</p>'}</div></div></section>`;
     if (loans.length) out += `<section class="sec"><div class="sec-h"><h2>Verliehen</h2></div><div class="card flat"><div class="list">${loans.map((x) => row(x, 'out')).join('')}</div></div></section>`;
-    out += `<p class="faint" style="font-size:11px;margin-top:14px;text-align:center;font-weight:600;line-height:1.5">Saison ${esc(tr0.seasonLabel || '')} · startet jede Saison bei null<br>Quelle: Transfermarkt + offizielle Wechsel aus den News (KI)</p>`;
+    out += `<p class="faint" style="font-size:11px;margin-top:14px;text-align:center;font-weight:600;line-height:1.5">Saison ${esc(tr0.seasonLabel || '')} · startet jede Saison bei null<br>Quellen: Transfermarkt, FotMob + offizielle Wechsel aus den News (KI)</p>`;
     return out;
   }
   function vVertraege() {

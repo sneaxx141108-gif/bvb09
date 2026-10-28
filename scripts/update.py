@@ -3079,10 +3079,74 @@ def fm_page(path):
     return json.loads(m.group(1))['props']['pageProps']
 
 
-def fm_team(tid, name):
+def fm_team_data(tid, name):
     fb = fm_page('/teams/%d/squad/%s' % (tid, name)).get('fallback') or {}
-    t = fb.get('team-%d' % tid) or next((v for k, v in fb.items() if k.startswith('team-')), {})
+    return fb.get('team-%d' % tid) or next((v for k, v in fb.items() if k.startswith('team-')), {})
+
+
+def fm_members(t):
     return [p for g in ((t.get('squad') or {}).get('squad') or []) if g.get('title') != 'coach' for p in g.get('members') or []]
+
+
+def fm_team(tid, name):
+    return fm_members(fm_team_data(tid, name))
+
+
+FM_CLUB_IMG = 'https://images.fotmob.com/image_resources/logo/teamlogo/%s.png'
+FM_OWN = {9789, 8395, 394130}  # BVB, BVB II, U19 - interne Wechsel zaehlen nicht
+
+
+def fm_sync_transfers(tdata, notes):
+    """Zu- und Abgaenge der Profis laut FotMob in die Transferbilanz der laufenden Saison - ergaenzt Transfermarkt
+    (nur vom PC) und die KI-News, damit die Bilanz auch in kuenftigen Saisons vollstaendig wird."""
+    data = (tdata or {}).get('data') or {}
+    if not data:
+        return 0
+    tr = load('transfers.json', {}) or {}
+    lab = '%02d/%02d' % (TRANSFER_SEASON % 100, (TRANSFER_SEASON + 1) % 100)
+    changed = 0
+    if tr.get('season') != TRANSFER_SEASON:
+        tr = {'season': TRANSFER_SEASON, 'seasonLabel': lab, 'in': [], 'out': [], 'income': 0, 'expense': 0, 'balance': 0,
+              'resetAt': iso(NOW)}
+        notes.append('Neue Transfersaison %s – die Bilanz startet bei null' % lab)
+        changed += 1
+    # FotMob datiert nach Bekanntgabe: Sommer-Wechsel werden oft schon im Fruehjahr fix gemacht -> ab 1. Maerz zaehlt ein
+    # Wechsel zur kommenden Saison, Winterwechsel (Januar/Februar) noch zur alten
+    start, end = '%d-03-01' % TRANSFER_SEASON, '%d-03-01' % (TRANSFER_SEASON + 1)
+    known = {slug(x['name']): x for k in ('in', 'out') for x in tr.get(k) or []}
+    for key, direction in (('Players in', 'in'), ('Players out', 'out')):
+        for x in data.get(key) or []:
+            date = (x.get('transferDate') or '')[:10]
+            other = x.get('fromClubId') if direction == 'in' else x.get('toClubId')
+            if not x.get('name') or not (start <= date < end) or other in FM_OWN:
+                continue
+            fee = x.get('fee') or {}
+            ftxt = str(fee.get('feeText') or '').lower()
+            loan = 'loan' in ftxt or 'loan' in str((x.get('transferType') or {}).get('text') or '').lower()
+            value = fee['value'] if isinstance(fee.get('value'), (int, float)) and fee['value'] > 0 else None
+            text = (fmt_money(value) if value else 'Leihe') if loan else fmt_money(value) if value else 'ablösefrei' if 'free' in ftxt else 'k. A.'
+            old = known.get(slug(x['name']))
+            if old:
+                if value and not old.get('feeValue'):
+                    old.update({'feeValue': value, 'fee': text})
+                    changed += 1
+                continue
+            club = x.get('fromClubFullName' if direction == 'in' else 'toClubFullName') or x.get('fromClub' if direction == 'in' else 'toClub')
+            entry = {'id': 'fm-%s' % x.get('playerId'), 'name': x['name'], 'img': FM_IMG % x['playerId'] if x.get('playerId') else None,
+                     'position': FM_POS.get(((x.get('position') or {}).get('label') or '').upper()),
+                     'club': {'name': club, 'crest': FM_CLUB_IMG % other} if club else None,
+                     'fee': text, 'feeValue': value, 'loan': loan, 'source': 'FotMob', 'date': date}
+            tr.setdefault(direction, []).insert(0, entry)
+            known[slug(x['name'])] = entry
+            changed += 1
+            notes.append('%s laut FotMob: %s (%s)' % ('Zugang' if direction == 'in' else 'Abgang', x['name'], club or 'k. A.'))
+    if changed:
+        tr['income'] = sum(x.get('feeValue') or 0 for x in tr.get('out') or [])
+        tr['expense'] = sum(x.get('feeValue') or 0 for x in tr.get('in') or [])
+        tr['balance'] = tr['income'] - tr['expense']
+        tr['updatedAt'] = iso(NOW)
+        save('transfers.json', tr)
+    return changed
 
 
 def fm_return_de(s):
@@ -3149,7 +3213,8 @@ def mod_fotmob(state):
         raise RuntimeError('keine Kaderdaten')
     changed, notes, errors = 0, [], []
     # Profis
-    members = fm_team(*FM_TEAMS['profis'])
+    t_pro = fm_team_data(*FM_TEAMS['profis'])
+    members = fm_members(t_pro)
     if len(members) < 15:
         raise RuntimeError('FotMob lieferte nur %d Profis' % len(members))
     players = teams['profis']['players']
@@ -3209,6 +3274,11 @@ def mod_fotmob(state):
         except Exception as e:
             errors.append('%s: %s' % (p['name'], str(e)[:80]))
         time.sleep(1.5)
+    # Transferbilanz der laufenden Saison um die FotMob-Wechsel ergaenzen
+    try:
+        fm_sync_transfers(t_pro.get('transfers'), notes)
+    except Exception as e:
+        errors.append('Transfers: %s' % str(e)[:120])
     # U19: Kader abgleichen (keine Statistiken). Wer bei FotMob im Profi-Kader steht, zaehlt als "noch da".
     try:
         changed += fm_sync_youth(teams, 'u19', notes, {slug(m.get('name') or '') for m in members})
