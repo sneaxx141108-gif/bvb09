@@ -97,6 +97,9 @@ Ohne `GEMINI_API_KEY` laufen alle Module außer den KI-Texten. Python nur mit St
 - Fertig: Mega-Update (Spieltag-Zentrale, Tippspiel, Konferenz, Saison-Tab mit BL- und CL-Prognose, Lieblingsspieler,
   Einstellungen, Spielervergleich, Ranglisten Tore/Vorlagen/Scorer, 13 Formationen, Design mit Glas, Tageszeit,
   TV-Intro-Startbildschirm, Haptik, Seitenwechsel ohne Überlappung).
-- **Offen bei Niklas:** GitHub Pages auf „GitHub Actions“ stellen; Ersatz-KI-Schlüssel anlegen.
+- GitHub Pages ist an (Quelle „GitHub Actions“, seit 28.10.2026), die App ist online.
+- Repository auf Niklas' Laptop: `C:\Users\Admin\Documents\bvb09` (Git + Git Credential Manager installiert).
+  Lokale Hilfsordner `bvb09-main/`, `screenshots/`, `.claude/` stehen in `.git/info/exclude` – nie committen.
+- **Offen bei Niklas:** Ersatz-KI-Schlüssel anlegen (Konto + Schlüssel macht Niklas selbst, nicht Claude).
 - **Offen (zuletzt, gemeinsam):** Push-Benachrichtigungen über ntfy (Tore, Aufstellung, Here we go, Verletzungen).
 - Aktuelle Arbeit und Details: siehe `ENTWICKLUNG.md`.

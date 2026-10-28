@@ -49,6 +49,6 @@ erledigte abhaken, danach committen und pushen (siehe `CLAUDE.md`).
 
 ## Danach
 
-- GitHub Pages einschalten (Niklas) und prüfen, dass die Seite online ist.
+- [x] GitHub Pages eingeschaltet (Quelle „GitHub Actions“) – App online, Lauf #95 mit allen Modulen grün (28.10.2026).
 - Ersatz-KI-Schlüssel (Niklas).
 - Zuletzt gemeinsam: Push-Benachrichtigungen über ntfy.
