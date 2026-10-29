@@ -652,17 +652,64 @@ h1, h2, h3, p { margin: 0; }
 .st-words div:nth-child(2) { animation-direction: reverse; animation-duration: 22s; }
 .st-words div:nth-child(3) { animation-duration: 26s; }
 .st-slide.soft .st-words div { -webkit-text-stroke-color: rgba(255, 176, 32, .1); }
-.st-media { position: relative; flex: 1; min-height: 0; }
-.st-img { position: absolute; left: 50%; bottom: 0; height: 88%; max-height: 520px; width: auto; max-width: 100%; transform: translateX(-50%); object-fit: contain; filter: grayscale(1) contrast(1.12); mix-blend-mode: multiply; animation: stImg 1s var(--ease) both .1s; }
-.st-slide.soft .st-img { height: 56%; width: auto; max-width: 70%; bottom: 10%; object-fit: cover; border-radius: 28px; filter: none; mix-blend-mode: normal; box-shadow: 0 0 0 3px var(--warn), 0 30px 60px rgba(0, 0, 0, .6); }
-.st-slide .tc-sil { left: 50%; right: auto; transform: translateX(-50%); width: 240px; height: 280px; }
-.st-stamp { position: absolute; left: 22px; top: calc(var(--safe-t) + 80px); z-index: 2; font-family: var(--display); font-weight: 900; font-size: 74px; line-height: .8; text-transform: uppercase; transform: rotate(-7deg); transform-origin: left bottom; animation: slam .8s var(--spring) both .25s; }
-.st-slide.soft .st-stamp { font-size: 56px; color: var(--warn); }
 .st-info { position: relative; z-index: 3; padding: 20px 20px calc(var(--safe-b) + 22px); background: #0A0900; color: var(--text); border-radius: 30px 30px 0 0; display: flex; flex-direction: column; gap: 14px; animation: inUp .7s var(--ease) both .15s; }
-.st-flow { display: flex; align-items: center; gap: 12px; }
-.st-flow .crest, .st-flow .fb { width: 46px; height: 46px; border-radius: 50%; }
-.st-flow img.crest { background: #fff; padding: 5px; }
-.st-flow .tc-arrow { flex: 1; width: auto; }
+/* Spieler-Story: Foto-Karte mit Status-Sticker oben, Info-Blatt unten – nichts überlappt, passt auf jedes iPhone */
+.st-hero { position: relative; z-index: 2; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: calc(var(--safe-t) + 80px) 28px 30px; }
+.st-card { position: relative; height: 100%; max-height: 380px; aspect-ratio: 4 / 5; max-width: 100%; border-radius: 30px; transform: rotate(-3deg); animation: stCard .8s var(--spring) both .08s; }
+.st-photo { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center 18%; border-radius: inherit; background: #15140F; }
+.st-nophoto { position: relative; overflow: hidden; }
+.st-pw { position: relative; width: 100%; height: 100%; overflow: hidden; border-radius: inherit; }
+.st-pw .st-photo { animation: stKen 9s ease-out both; }
+.st-pw::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(115deg, transparent 32%, rgba(255, 255, 255, .38) 47%, transparent 62%); transform: translateX(-130%); animation: stShine 1.5s var(--ease) both .95s; }
+.st-bg { position: absolute; inset: -12%; z-index: -1; width: 124%; height: 124%; object-fit: cover; filter: blur(42px) saturate(1.35); opacity: .42; pointer-events: none; }
+.st-src { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.st-src-av { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; font-size: 13px; font-weight: 900; color: #fff; background: rgba(0, 0, 0, .45); box-shadow: 0 0 0 2px var(--s4); }
+.st-src-av.t1 { box-shadow: 0 0 0 2px var(--ok); }
+.st-src-av.t2 { box-shadow: 0 0 0 2px var(--warn); }
+.st-src-av.t3 { box-shadow: 0 0 0 2px var(--loss); }
+.st-src-t { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.st-src-t b { font-size: 14px; font-weight: 800; }
+.st-src-t span { font-size: 11px; font-weight: 700; color: var(--muted); }
+#story.hwg .st-src-av { background: var(--ink); color: var(--y); }
+#story.hwg .st-src-t b { color: var(--ink); }
+#story.hwg .st-src-t span { color: rgba(10, 9, 0, .7); }
+.st-route { position: relative; flex: 1; min-width: 34px; display: flex; align-items: center; }
+.st-route .tc-arrow { flex: 1; width: auto; }
+.st-route em { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); font-style: normal; font-family: var(--display); font-weight: 900; font-size: 16px; line-height: 1; color: var(--y); white-space: nowrap; }
+@keyframes stKen { from { transform: scale(1.1); } to { transform: scale(1); } }
+@keyframes stShine { to { transform: translateX(130%); } }
+.st-nophoto .tc-sil { left: 50%; right: auto; bottom: 0; transform: translateX(-50%); width: 70%; height: 80%; }
+.st-slide.ps.hwg .st-card { box-shadow: 0 0 0 5px var(--ink), 0 30px 60px rgba(10, 9, 0, .35); }
+.st-slide.ps.soft .st-card { box-shadow: 0 0 0 3px var(--warn), 0 0 50px rgba(255, 176, 32, .22), 0 30px 60px rgba(0, 0, 0, .6); }
+.st-slide.ps.deny .st-card { box-shadow: 0 0 0 3px var(--loss), 0 0 50px rgba(255, 90, 78, .2), 0 30px 60px rgba(0, 0, 0, .6); }
+.st-slide.ps.deny { background: radial-gradient(120% 80% at 80% 0%, rgba(255, 90, 78, .2), transparent 60%), #0B0807; color: var(--text); }
+.st-slide.ps.deny::before { background: repeating-linear-gradient(115deg, rgba(255, 90, 78, .04) 0 18px, transparent 18px 48px); }
+.st-slide.ps.deny .st-words div { -webkit-text-stroke-color: rgba(255, 90, 78, .1); }
+.st-num { position: absolute; top: 12px; right: 12px; padding: 5px 10px 3px; border-radius: 12px; font-family: var(--display); font-weight: 900; font-size: 22px; line-height: 1; color: #fff; background: rgba(0, 0, 0, .55); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.st-sticker { position: absolute; left: -16px; bottom: -20px; padding: 11px 16px 8px; border-radius: 16px; font-family: var(--display); font-weight: 900; font-size: clamp(28px, 8.6vw, 42px); line-height: .86; text-transform: uppercase; white-space: nowrap; transform: rotate(-5deg); box-shadow: 0 16px 34px rgba(0, 0, 0, .4); animation: stick .8s var(--spring) both .38s; }
+.st-sticker small { display: block; margin-top: 4px; font-size: .58em; letter-spacing: .02em; }
+.st-slide.ps.hwg .st-sticker { background: var(--ink); color: var(--y); }
+.st-slide.ps.soft .st-sticker { background: var(--warn); color: var(--ink); }
+.st-slide.ps.deny .st-sticker { background: var(--loss); color: var(--ink); }
+.st-sheet { position: relative; z-index: 5; padding: 18px 20px calc(var(--safe-b) + 18px); background: #0A0900; color: var(--text); border-radius: 30px 30px 0 0; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 -18px 40px rgba(0, 0, 0, .35); animation: inUp .7s var(--ease) both .15s; }
+.st-clubs { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.st-club { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 44%; font-size: 13px; font-weight: 800; }
+.st-club .crest, .st-club .fb { width: 38px; height: 38px; flex: none; border-radius: 50%; }
+.st-club img.crest { background: #fff; padding: 4px; }
+.st-clubs .tc-arrow { flex: 1; min-width: 26px; width: auto; }
+.st-stay { font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--ok); }
+.st-sum { font-size: 13px; line-height: 1.5; color: #D8D7CE; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.st-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; font-size: 11px; font-weight: 600; color: var(--muted); }
+.st-cta { flex: none; display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border-radius: 999px; background: var(--y); color: var(--ink); font-size: 13px; font-weight: 800; }
+@keyframes stCard { from { opacity: 0; transform: translateY(30px) rotate(2deg) scale(.94); } to { opacity: 1; transform: rotate(-3deg); } }
+@keyframes stick { 0% { opacity: 0; transform: scale(1.8) rotate(-12deg); } 60% { opacity: 1; transform: scale(.94) rotate(-4deg); } 100% { transform: rotate(-5deg); } }
+@media (max-height: 720px) {
+  .st-hero { padding: calc(var(--safe-t) + 84px) 36px 30px; }
+  .st-sheet { gap: 10px; padding-top: 16px; }
+  .st-sheet .st-name { font-size: 34px; }
+  .st-sum { -webkit-line-clamp: 2; }
+  .st-sticker { font-size: 26px; bottom: -12px; }
+}
 .st-name { font-family: var(--display); font-weight: 900; font-size: 42px; line-height: .86; text-transform: uppercase; letter-spacing: .3px; }
 .st-tap { position: absolute; top: 90px; bottom: 40%; z-index: 4; }
 .st-tap.prev { left: 0; width: 32%; }
