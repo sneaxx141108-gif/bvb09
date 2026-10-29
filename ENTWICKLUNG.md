@@ -62,6 +62,28 @@ erledigte abhaken, danach committen und pushen (siehe `CLAUDE.md`).
 - [x] **Liga-Torjäger raus aus dem Saison-Tab** (nicht zu den Prognosen!). Dafür „Top-Spieler“ (Torschützen, Vorlagen,
       Scorer, alle Vereine) unter der Bundesliga- und der CL-Tabelle – ESPN-Statistik (`espn_leaders`, `tables.leaders`).
 
+## Plan bis 10.11.2026 (mit Niklas am 29.10. abgestimmt) – „App deutlich verbessern“
+
+Die drei BVB-Spiele sind Live-Tests (Niklas nutzt die App beim Spiel und meldet, was hakt):
+Sa 31.10. Bayern – BVB (BL), Mi 4.11. BVB – Betis (CL), Sa 7.11. BVB – Elversberg (BL).
+
+- [ ] **Do 29.–Fr 30.10. (vor dem Klassiker):**
+  - **Prognose-Archiv starten**: vor jedem Spiel Prognose und KI-Tipp festhalten, damit die Treffsicherheit ab dem Klassiker zählt.
+  - **FotMob-Spieldaten** nach Abpfiff holen (Spielseite `/matches/…`, `__NEXT_DATA__` → `content`: `lineup` mit Noten,
+    `shotmap` mit xG, `momentum`, `stats`, `playerStats`). Nur FotMob-Noten, **keine eigenen Noten** (Wunsch Niklas).
+  - **Live-Statistik im Spiel** (Ballbesitz, Schüsse, Ecken, Karten) in der Spieltag-Zentrale.
+- [ ] **So 1.–Di 3.11.:** Fixes vom Live-Test; **Spielanalyse nach Abpfiff** (Noten auf dem Spielfeld, Spieler des Spiels,
+      Torschuss-Karte mit xG, Spielverlaufskurve, Statistik-Vergleich); **Noten-Verlauf im Profil** (Formkurve, Spieler des
+      Monats); **Spieltag-Storys** (nach jedem Spiel automatisch: Ergebnis, Tore, bester Spieler, Highlight-Video).
+- [ ] **Do 5.–Fr 6.11.:** **Startseite neu denken** („Seit deinem letzten Besuch“); **Prognose-Treffsicherheit** anzeigen;
+      **Tippspiel ausbauen** (Saisonwertung Du gegen die KI, Abzeichen).
+- [ ] **So 8.11.:** **Design-Feinschliff** (alle Seiten) und **schneller laden**.
+- [ ] **Mo 9.11.:** **Wetterfest machen**: Notfall-Anleitung in einfachem Deutsch, Alarm bei ausgefallenen Updates, Langzeit-Test.
+- [ ] **Di 10.11.:** Push-Benachrichtigungen über ntfy einrichten (gemeinsam, als allerletzter Schritt).
+
+Nicht gewählt (nicht ungefragt bauen): Gegner-Check, Kalender-Abo, eigene Spieler-Noten, BVB-Saisonzahlen-Seite,
+Teilen-Bilder, Tippspiel mit Freunden, Suche über alles.
+
 ## Langzeit-Test vom 28.10.2026 (3 Saisons)
 
 - Saisonwechsel simuliert (Daten als Vorsaison markiert): alle 6 Server-Module ok, alles auf neue Saison umgestellt,
