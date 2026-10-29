@@ -59,6 +59,8 @@ erledigte abhaken, danach committen und pushen (siehe `CLAUDE.md`).
       gut läuft wie bei einer Prüfung von Hand. Hinweis: Prognosen rechnet Code (forecast.py), nicht die KI.
 - [x] **Ladebildschirm:** komplett schwarz, in der Mitte nur eine weiße, leuchtende Prozentzahl (Glow) –
       kein Balken, kein Strich, sonst nichts.
+- [x] **Liga-Torjäger raus aus dem Saison-Tab** (nicht zu den Prognosen!). Dafür „Top-Spieler“ (Torschützen, Vorlagen,
+      Scorer, alle Vereine) unter der Bundesliga- und der CL-Tabelle – ESPN-Statistik (`espn_leaders`, `tables.leaders`).
 
 ## Langzeit-Test vom 28.10.2026 (3 Saisons)
 
