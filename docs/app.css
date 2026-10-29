@@ -111,23 +111,6 @@ h1, h2, h3, p { margin: 0; }
   position: relative; z-index: 1; max-width: 560px; margin: 0 auto; outline: none;
   padding: calc(var(--safe-t) + 14px) 18px calc(var(--tabbar) + var(--safe-b) + 44px);
 }
-.enter > * { animation: inUp .6s var(--ease) both; }
-.enter.from-right > * { animation-name: inRight; }
-.enter.from-left > * { animation-name: inLeft; }
-.enter > *:nth-child(2) { animation-delay: .04s; }
-.enter > *:nth-child(3) { animation-delay: .08s; }
-.enter > *:nth-child(4) { animation-delay: .12s; }
-.enter > *:nth-child(5) { animation-delay: .16s; }
-.enter > *:nth-child(6) { animation-delay: .2s; }
-.enter > *:nth-child(7) { animation-delay: .24s; }
-.enter > *:nth-child(n+8) { animation-delay: .28s; }
-.stagger > * { animation: inUp .55s var(--ease) both; }
-.stagger > *:nth-child(2) { animation-delay: .05s; }
-.stagger > *:nth-child(3) { animation-delay: .1s; }
-.stagger > *:nth-child(4) { animation-delay: .15s; }
-.stagger > *:nth-child(5) { animation-delay: .2s; }
-.stagger > *:nth-child(6) { animation-delay: .25s; }
-.stagger > *:nth-child(n+7) { animation-delay: .3s; }
 
 .ptitle { padding: 10px 2px 18px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .ptitle h1 { font-family: var(--display); font-weight: 900; font-size: 50px; line-height: .86; text-transform: uppercase; letter-spacing: .3px; margin-top: 6px; }
@@ -628,7 +611,6 @@ h1, h2, h3, p { margin: 0; }
 /* ---------------------------------------------------------------- Story-Ansicht */
 #story { position: fixed; inset: 0; z-index: 90; background: #000; overflow: hidden; touch-action: none; }
 #story.opening { animation: fadeIn .22s ease-out both; }
-#story.opening .st-pic, #story.opening .st-sheet, #story.opening .st-info { animation: none; }
 #story.closing { animation: storyOut .3s ease-in both; }
 .st-bars { position: absolute; top: calc(var(--safe-t) + 10px); left: 10px; right: 10px; display: flex; gap: 4px; z-index: 6; }
 .st-bar { flex: 1; height: 3px; border-radius: 3px; background: rgba(255, 255, 255, .28); overflow: hidden; }
@@ -651,21 +633,20 @@ h1, h2, h3, p { margin: 0; }
 .st-words div:nth-child(2) { animation-direction: reverse; animation-duration: 22s; }
 .st-words div:nth-child(3) { animation-duration: 26s; }
 .st-slide.soft .st-words div { -webkit-text-stroke-color: rgba(255, 176, 32, .1); }
-.st-info { position: relative; z-index: 3; padding: 20px 20px calc(var(--safe-b) + 22px); background: #0A0900; color: var(--text); border-radius: 30px 30px 0 0; display: flex; flex-direction: column; gap: 14px; animation: inUp .7s var(--ease) both .15s; }
+.st-info { position: relative; z-index: 3; padding: 20px 20px calc(var(--safe-b) + 22px); background: #0A0900; color: var(--text); border-radius: 30px 30px 0 0; display: flex; flex-direction: column; gap: 14px; }
 /* Spieler-Story (modern): randloses Foto, Glas-Pille, großer Name, Glas-Kacheln – passt auf jedes iPhone */
 .st-slide.ps { background: #050505; color: var(--text); --acc: var(--warn); --acc-rgb: 255, 176, 32; }
 .st-slide.ps.hwg { --acc: var(--y); --acc-rgb: 253, 225, 0; }
 .st-slide.ps.deny { --acc: var(--loss); --acc-rgb: 255, 90, 78; }
 .st-slide.ps::before { display: none; }
-.st-bg { position: absolute; inset: -12%; z-index: -2; width: 124%; height: 124%; object-fit: cover; filter: blur(48px) saturate(1.4); opacity: .38; pointer-events: none; }
 .st-glow { position: absolute; inset: 0; z-index: -1; pointer-events: none; background: radial-gradient(120% 60% at 50% 105%, rgba(var(--acc-rgb), .2), transparent 65%), linear-gradient(180deg, transparent 40%, rgba(5, 5, 5, .85) 75%, #050505); }
 .st-hero { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: calc(var(--safe-t) + 78px) 24px 18px; }
-.st-pic { position: relative; height: 100%; max-height: 300px; aspect-ratio: 4 / 5; max-width: 100%; border-radius: 28px; overflow: hidden; box-shadow: 0 0 0 1px rgba(var(--acc-rgb), .45), 0 0 60px rgba(var(--acc-rgb), .18), 0 30px 60px rgba(0, 0, 0, .55); animation: inUp .7s var(--ease) both .05s; }
+.st-pic { position: relative; height: 100%; max-height: 300px; aspect-ratio: 4 / 5; max-width: 100%; border-radius: 28px; overflow: hidden; box-shadow: 0 0 0 1px rgba(var(--acc-rgb), .45), 0 0 60px rgba(var(--acc-rgb), .18), 0 30px 60px rgba(0, 0, 0, .55); }
 .st-pic .st-photo { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center 18%; }
 .st-pic::after { content: ""; position: absolute; inset: 55% 0 0; background: linear-gradient(180deg, transparent, rgba(0, 0, 0, .55)); pointer-events: none; }
 .st-nophoto .tc-sil { left: 50%; right: auto; bottom: 18%; transform: translateX(-50%); width: 46%; height: 60%; }
 .st-num { position: absolute; z-index: 2; right: 14px; bottom: 10px; font-family: var(--display); font-weight: 900; font-size: 48px; line-height: .8; color: transparent; -webkit-text-stroke: 1.2px rgba(255, 255, 255, .8); }
-.st-sheet { position: relative; z-index: 5; padding: 0 20px calc(var(--safe-b) + 18px); display: flex; flex-direction: column; gap: 12px; animation: inUp .7s var(--ease) both .12s; }
+.st-sheet { position: relative; z-index: 5; padding: 0 20px calc(var(--safe-b) + 18px); display: flex; flex-direction: column; gap: 12px; }
 .st-pill { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; padding: 7px 13px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: #fff; background: rgba(255, 255, 255, .1); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .16); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
 .st-pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 10px var(--acc); animation: stDot 1.8s ease-in-out infinite; }
 .st-pill svg { width: 14px; height: 14px; }
@@ -771,9 +752,6 @@ h1, h2, h3, p { margin: 0; }
 @keyframes ping { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(3); opacity: 0; } }
 .ping { transform-box: fill-box; transform-origin: center; animation: ping 1.8s ease-out infinite; }
 
-::view-transition-old(root), ::view-transition-new(root) { animation-duration: .35s; }
-::view-transition-group(player-photo) { animation-duration: .6s; animation-timing-function: cubic-bezier(.16, 1, .3, 1); }
-::view-transition-old(player-photo), ::view-transition-new(player-photo) { mix-blend-mode: normal; height: 100%; object-fit: contain; }
 
 @media (prefers-reduced-motion: reduce) {
   :root:not(.fm) *, :root:not(.fm) *::before, :root:not(.fm) *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
@@ -1309,35 +1287,6 @@ body.has-live #toast { bottom: calc(var(--tabbar) + var(--safe-b) + 72px); }
 /* ---------------------------------------------------------------- Tageszeit-Design */
 .ambient { background: radial-gradient(closest-side, var(--amb, rgba(253, 225, 0, .13)), transparent 72%); }
 
-/* ---------------------------------------------------------------- Seitenwechsel (View Transitions, iOS 18+) */
-#tabbar { view-transition-name: tabbar; }
-#topbar { view-transition-name: topbar; }
-.ambient { view-transition-name: ambient; }
-#livebar { view-transition-name: livebar; }
-::view-transition-old(tabbar), ::view-transition-old(ambient), ::view-transition-old(sky), ::view-transition-old(livebar) { display: none; }
-::view-transition-new(tabbar), ::view-transition-new(ambient), ::view-transition-new(sky), ::view-transition-new(livebar),
-::view-transition-group(tabbar), ::view-transition-group(ambient), ::view-transition-group(sky), ::view-transition-group(livebar) { animation: none; }
-:root[data-nav]::view-transition-old(root), :root[data-nav]::view-transition-new(root) { animation-duration: .44s; animation-timing-function: cubic-bezier(.2, .9, .25, 1); animation-fill-mode: both; mix-blend-mode: normal; }
-:root[data-nav="push"]::view-transition-old(root) { animation-name: vtPushOut; }
-:root[data-nav="push"]::view-transition-new(root) { animation-name: vtPushIn; }
-:root[data-nav="pop"]::view-transition-old(root) { animation-name: vtPopOut; z-index: 2; }
-:root[data-nav="pop"]::view-transition-new(root) { animation-name: vtPopIn; }
-:root[data-nav="tab-r"]::view-transition-old(root) { animation-name: vtOutL; animation-duration: .3s; }
-:root[data-nav="tab-r"]::view-transition-new(root) { animation-name: vtInR; }
-:root[data-nav="tab-l"]::view-transition-old(root) { animation-name: vtOutR; animation-duration: .3s; }
-:root[data-nav="tab-l"]::view-transition-new(root) { animation-name: vtInL; }
-:root[data-nav="fade"]::view-transition-old(root) { animation-name: vtFadeOut; animation-duration: .25s; }
-:root[data-nav="fade"]::view-transition-new(root) { animation-name: vtFadeIn; animation-duration: .35s; }
-@keyframes vtPushIn { from { transform: translateX(100%); box-shadow: -24px 0 48px rgba(0, 0, 0, .55); } to { transform: none; box-shadow: -24px 0 48px rgba(0, 0, 0, 0); } }
-@keyframes vtPushOut { to { transform: translateX(-26%); opacity: .3; } }
-@keyframes vtPopOut { from { box-shadow: -24px 0 48px rgba(0, 0, 0, .55); } to { transform: translateX(100%); box-shadow: -24px 0 48px rgba(0, 0, 0, 0); } }
-@keyframes vtPopIn { from { transform: translateX(-26%); opacity: .3; } }
-@keyframes vtOutL { to { transform: translateX(-7%); opacity: 0; } }
-@keyframes vtInR { from { transform: translateX(7%); opacity: 0; } }
-@keyframes vtOutR { to { transform: translateX(7%); opacity: 0; } }
-@keyframes vtInL { from { transform: translateX(-7%); opacity: 0; } }
-@keyframes vtFadeOut { to { opacity: 0; transform: scale(.985); } }
-@keyframes vtFadeIn { from { opacity: 0; transform: scale(1.015); } }
 
 /* Kleine Extras */
 .tab.on svg { animation: tabPop .55s var(--spring); }
@@ -1353,21 +1302,10 @@ body.has-live #toast { bottom: calc(var(--tabbar) + var(--safe-b) + 72px); }
 @keyframes indStretch { 0% { scale: 1 1; } 35% { scale: 1.28 .86; } 70% { scale: .96 1.04; } 100% { scale: 1 1; } }
 .seg-ind { background: linear-gradient(180deg, #FFF27A, var(--y) 55%, #EED200); box-shadow: 0 8px 22px rgba(253, 225, 0, .3), inset 0 1px 0 rgba(255, 255, 255, .6); }
 
-/* Glanz, der ueber gelbe Flaechen streicht */
-.tile.y::after, .mtile.y::after, .card-y::after, .set-me::after, .konf-hero::after, .btn:not(.ghost)::after, #toast::after {
-  content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; border-radius: inherit;
-  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, .3) 48%, rgba(255, 255, 255, .06) 54%, transparent 68%);
-  transform: translateX(-130%); animation: shine 7.5s ease-in-out infinite 1.2s; }
-.mtile.y::after { animation-delay: 2.4s; }
-.card-y::after { animation-delay: .6s; }
-.btn:not(.ghost) { position: relative; overflow: hidden; background: linear-gradient(180deg, #FFF06A, var(--y) 50%, #F2D600); box-shadow: 0 12px 28px rgba(253, 225, 0, .26), inset 0 1px 0 rgba(255, 255, 255, .6); }
-.btn:not(.ghost)::after { animation-duration: 5s; animation-delay: 3s; }
-@keyframes shine { 0%, 62% { transform: translateX(-130%); } 82%, 100% { transform: translateX(130%); } }
 
-/* Ueberschriften: Flutlicht-Schimmer (einmal beim Öffnen der Seite) und Akzentbalken */
+/* Ueberschriften: gelber Schein und Akzentbalken */
 .ptitle h1 em, .hello h1 em { color: transparent; background: linear-gradient(100deg, var(--y) 38%, #FFFBD0 50%, var(--y) 62%) 0 0 / 260% 100%; -webkit-background-clip: text; background-clip: text;
-  text-shadow: none; filter: drop-shadow(0 0 22px rgba(253, 225, 0, .32)); animation: titleSheen 2.8s ease-in-out .3s 1 both; }
-@keyframes titleSheen { 0%, 55% { background-position: 100% 0; } 85%, 100% { background-position: 0 0; } }
+  text-shadow: none; filter: drop-shadow(0 0 22px rgba(253, 225, 0, .32)); }
 .sec-h h2 { display: flex; align-items: center; gap: 9px; }
 .sec-h h2::before { content: ""; flex: none; width: 4px; height: .74em; border-radius: 3px; background: linear-gradient(180deg, #FFF27A, var(--y)); box-shadow: 0 0 12px rgba(253, 225, 0, .55); }
 
@@ -1380,8 +1318,6 @@ body.has-live #toast { bottom: calc(var(--tabbar) + var(--safe-b) + 72px); }
 
 /* Toast als Glas-Pille */
 #toast { overflow: hidden; background: linear-gradient(180deg, #FFF06A, var(--y) 55%, #F0D400); box-shadow: 0 18px 40px rgba(0, 0, 0, .6), 0 0 0 1px rgba(255, 255, 255, .25) inset, 0 0 30px rgba(253, 225, 0, .25); }
-#toast::after { animation: none; }
-#toast.on::after { animation: shine 1.4s ease-out .15s 1 both; }
 
 /* Sheet: Glas, zum Schliessen nach unten wischen */
 .sheet-panel { background: linear-gradient(180deg, rgba(30, 30, 30, .94), rgba(14, 14, 14, .97)); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 -30px 60px rgba(0, 0, 0, .6); }
@@ -1404,19 +1340,6 @@ body.has-live #toast { bottom: calc(var(--tabbar) + var(--safe-b) + 72px); }
 .tk-when { margin-left: auto; flex: none; color: var(--y); white-space: nowrap; }
 .mh-top .eyebrow { white-space: nowrap; }
 
-/* Seitenwechsel ohne Ueberlappung: erst blendet die alte Seite aus, dann kommt die neue ("Fade Through") */
-:root[data-nav="tab-r"]::view-transition-old(root), :root[data-nav="tab-l"]::view-transition-old(root), :root[data-nav="fade"]::view-transition-old(root) { animation: vtThroughOut .14s cubic-bezier(.4, 0, 1, 1) both; }
-:root[data-nav="tab-r"]::view-transition-new(root) { animation: vtThroughInR .32s cubic-bezier(0, 0, .2, 1) .1s both; }
-:root[data-nav="tab-l"]::view-transition-new(root) { animation: vtThroughInL .32s cubic-bezier(0, 0, .2, 1) .1s both; }
-:root[data-nav="fade"]::view-transition-new(root) { animation: vtThroughIn .32s cubic-bezier(0, 0, .2, 1) .1s both; }
-@keyframes vtThroughOut { to { opacity: 0; } }
-@keyframes vtThroughInR { from { opacity: 0; transform: translateX(18px); } }
-@keyframes vtThroughInL { from { opacity: 0; transform: translateX(-18px); } }
-@keyframes vtThroughIn { from { opacity: 0; transform: scale(.985); } }
-:root[data-nav="push"]::view-transition-old(root) { animation-name: vtPushOutDim; }
-:root[data-nav="pop"]::view-transition-new(root) { animation-name: vtPopInDim; }
-@keyframes vtPushOutDim { to { transform: translateX(-26%); filter: brightness(.35); } }
-@keyframes vtPopInDim { from { transform: translateX(-26%); filter: brightness(.35); } }
 
 /* ---------------------------------------------------------------- Startbildschirm v3: TV-Intro statt Stadionlicht */
 @keyframes spBar { 0% { transform: rotate(-14deg) translateX(-105%); } 50% { transform: rotate(-14deg) translateX(0); } 100% { transform: rotate(-14deg) translateX(105%); } }
@@ -1426,7 +1349,7 @@ body.has-live #toast { bottom: calc(var(--tabbar) + var(--safe-b) + 72px); }
 
 /* ---------------------------------------------------------------- Tageszeit-Design: vier deutlich verschiedene Stimmungen */
 :root { --sky-top: none; --orb: transparent; --orb-x: 85%; --orb-y: -6%; }
-.sky { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; view-transition-name: sky; }
+.sky { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
 .sky i { position: absolute; display: block; }
 .sky-top { left: 0; right: 0; top: 0; height: 75vh; background: var(--sky-top); }
 .sky-orb { width: 560px; height: 560px; left: calc(var(--orb-x) - 280px); top: calc(var(--orb-y) - 280px); border-radius: 50%; background: radial-gradient(closest-side, var(--orb), transparent 72%); animation: orbBreath 9s ease-in-out infinite alternate; }
@@ -1590,3 +1513,20 @@ html, body { transition: background-color 1.2s ease; }
 .pitch.editing .slot .sl-c { box-shadow: 0 0 0 2px var(--y), 0 0 0 6px rgba(253, 225, 0, .18); }
 .pitch .slot.drag { z-index: 5; cursor: grabbing; }
 .pitch .slot.drag .sl-c { transform: scale(1.15); }
+
+/* ---------------------------------------------------------------- iPhone flüssig (Wunsch Niklas, 29.10.2026)
+   Safari auf dem iPhone ruckelt bei Dauer-Animationen und bei Glas-Unschärfe über bewegten Flächen (am PC merkt man das
+   nicht). Deshalb steht die Deko still und Glas-Unschärfe gibt es nur noch in Tab-Leiste und Kopfzeile.
+   Bleiben dürfen: Live-Punkte, Lade-Kreisel, Platzhalter-Schimmer beim Laden. */
+.ambient, .sky-orb, .sky-md, .stripes::before, .story-ring::before, .ai-badge.live, .mh-light, .mh-beam.l, .mh-beam.r, .mh-word,
+.mh-team .crest, .tc-media::before, .tc-arrow, .phero::before, .uz-ring .pulse-ring, .st-slide::before, .st-words div, .st-pill i,
+.wr-play, .wr-home-ring, .wr-player::before, .wr-orb, .gf-rays, .mst-light, .mst-teams .crest, .wx-ic, .yt-play, .konf-hero::before,
+.fav-empty-ic svg, .tmk-big { animation: none; }
+/* Einflug-Effekte, die bei jedem Seitenaufruf gleichzeitig starten (z. B. viele Transfer-Karten) */
+.form i, .tc-img, .tc-stamp, .phero-img, .vs-mid, .lu-p, .mst-teams, .mst-title { animation: none; }
+/* Lauftexte in jeder Transfer-Karte und wachsende Balken (im Saison-Tab ~70 gleichzeitig) */
+.tc-word, .bar > span, .split span, .runbars i, .h2h-bar i, .ms-bar i, .fc-bar, .pro-dist i, .cmp-bars i, .cf-bars i, .pb span, .clp-bar i, .pod-block { animation: none; }
+.st-close, .st-pill, .st-glass, .st-tiles > div, .st-src-av, .tc-flow, #livebar, .sheet-panel { -webkit-backdrop-filter: none; backdrop-filter: none; }
+.st-glass, .st-tiles > div { background: rgba(255, 255, 255, .08); }
+.st-pill { background: rgba(255, 255, 255, .13); }
+.sheet-backdrop { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(0, 0, 0, .68); }

@@ -105,9 +105,13 @@ Ohne `GEMINI_API_KEY` laufen alle Module außer den KI-Texten. Python nur mit St
   Haptik, Seitenwechsel ohne Überlappung).
 - Ladebildschirm (Wunsch Niklas, 29.10.2026, zuletzt geändert): **einfach nur schwarz** – keine Prozentzahl, kein Logo,
   kein Balken. Blendet weich aus, sobald die Seite fertig ist (Live-Stände höchstens 2,5 s abwarten).
-- Flüssig aufs iPhone (12) ausgelegt: keine Dauer-Effekte, die ständig neu zeichnen (z. B. `background-position`-Animationen,
-  `mix-blend-mode`), kein Licht beim Antippen, kein Einblenden beim Scrollen, langes Tippen ohne iOS-Menü/Textauswahl,
-  Drück-Effekt mit kurzer Verzögerung. Story öffnet mit kurzem Einblenden (kein Zoom).
+- **Flüssig aufs iPhone (12) ausgelegt** (Niklas: am PC glatt, am iPhone „grauenvoll“ – Safari ist dort viel empfindlicher):
+  Seitenwechsel **sofort, ohne Animation** (keine View Transitions – gaben schwarzes Ruckeln), keine Einflug-/Zähl-Animationen,
+  **keine Dauer-Animationen als Deko** (Lauftexte, Streifen, Schweben, Glanz, Schimmer), Glas-Unschärfe (`backdrop-filter`)
+  **nur in Tab-Leiste und Kopfzeile**, keine `filter: blur` auf großen Flächen, kein Licht beim Antippen, kein Einblenden beim
+  Scrollen, langes Tippen ohne iOS-Menü/Textauswahl, Drück-Effekt mit kurzer Verzögerung. Story: kurzes Einblenden, keine
+  Effekte, nächstes Foto vorgeladen. Neue Effekte immer am iPhone prüfen lassen. Sammel-Block am Ende von `app.css`.
+- App-Updates kommen beim ersten Öffnen an (Service Worker lädt am Cache vorbei, App lädt bei neuer Version einmal neu).
 - Tippspiel: KI-Punkte am 29.10.2026 auf 0 gesetzt (`KI_FROM` in `app.js`) – zählen nur Spiele ab dann.
 - GitHub Pages ist an (Quelle „GitHub Actions“, seit 28.10.2026), die App ist online.
 - Repository auf Niklas' Laptop: `C:\Users\Admin\Documents\bvb09` (Git + Git Credential Manager installiert).

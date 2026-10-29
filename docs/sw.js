@@ -1,10 +1,11 @@
 /* BVB 09 – Service Worker: App offline verfuegbar, Daten immer frisch */
-const SHELL = 'bvb09-shell-v27';
+const SHELL = 'bvb09-shell-v28';
 const IMG = 'bvb09-img-v1';
 const FILES = ['./', 'index.html', 'app.css', 'app.js', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 
+// Beim Installieren am Browser-Zwischenspeicher vorbei laden, sonst landet evtl. noch die alte app.js im Cache
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {

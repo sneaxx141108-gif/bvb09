@@ -758,6 +758,9 @@
   function renderStory() {
     const it = ST.items[ST.i];
     if (!it) { closeStories(); return; }
+    // Foto der nächsten Story schon vorladen, damit beim Weitertippen nichts nachlädt
+    const nx = ST.items[ST.i + 1];
+    if (nx && nx.img) { const pre = new Image(); pre.referrerPolicy = 'no-referrer'; pre.src = nx.img; }
     if (it.kind === 'match') { renderMatchStory(it); return; }
     const st = STATUS[it.status] || STATUS.interest;
     const big = st.big;
@@ -785,7 +788,6 @@
       <div class="st-head"><span class="st-src"><span class="st-src-av t${tier}">${esc(initials(it.source || 'Q'))}</span><span class="st-src-t"><b class="ellipsis">${esc(it.source || 'Quelle')}</b><span>${when ? esc(when) : esc(st.label)}</span></span></span>
         <button type="button" class="st-close" data-action="story-close" aria-label="Story schließen">${I.x}</button></div>
       <section class="st-slide ps ${tone}">
-        ${it.img ? img(it.img, 'st-bg', '', '', 'aria-hidden="true"') : ''}
         <div class="st-glow" aria-hidden="true"></div>
         <div class="st-hero"><div class="st-pic">${it.img ? img(it.img, 'st-photo', it.name, initials(it.name)) : `<span class="st-photo st-nophoto">${SIL_SOFT}</span>`}
           ${it.number ? `<span class="st-num">${esc(it.number)}</span>` : ''}</div></div>
@@ -1192,7 +1194,7 @@
     const s = statsOf(k, p.id) || {};
     const line = k === 'profis' ? `${s.apps || 0} Sp.${s.goals ? ` · ${s.goals} ${s.goals === 1 ? 'Tor' : 'Tore'}` : ''}`
       : `Vertrag bis ${p.contract ? p.contract.slice(0, 4) : UNK}`;
-    return `<a class="pc ${ab.length ? 'out' : ''}" href="#/spieler/${k}/${p.id}" data-vt="player">
+    return `<a class="pc ${ab.length ? 'out' : ''}" href="#/spieler/${k}/${p.id}">
       <span class="pc-media">${p.number ? `<span class="pc-num" aria-hidden="true">${esc(p.number)}</span>` : ''}${img(pimg(p.img, 'big'), '', p.name, initials(p.name))}${ab.length ? `<span class="pc-abs chip sm ${ab[0].type === 'injury' ? 'loss' : 'warn'}">${ab[0].type === 'injury' ? 'Verletzt' : 'Fehlt'}</span>` : ''}</span>
       <span class="pc-body"><span class="pc-name">${esc(p.name)}${p.captain ? ' <span class="yellow">©</span>' : ''}${favMark(k, p.id)}</span><span class="pc-pos">${esc(p.position || UNK)} · ${p.age || UNK} J.</span><span class="pc-val">${esc(line)}</span></span>
     </a>`;
@@ -1554,7 +1556,7 @@
     const line = (p) => { if (p.team !== 'profis') return ''; const s = sOf(p); return `${s.apps || 0} Sp. · ${s.goals || 0} T. · ${s.assists || 0} V.`; };
     let out = pageHead('Talente-<em>Radar</em>', 'Alle Spieler bis 21 Jahre · Profis nach Einsätzen', '', '#/mehr');
     if (list.length >= 3) {
-      out += `<div class="pgrid" style="grid-template-columns:repeat(3,minmax(0,1fr))">${list.slice(0, 3).map((p) => `<a class="pc" href="#/spieler/${p.team}/${p.id}" data-vt="player"><span class="pc-media" style="height:120px">${img(pimg(p.img, 'big'), '', p.name, initials(p.name), 'style="height:116px"')}</span><span class="pc-body"><span class="pc-name" style="font-size:15px">${esc(lastName(p.name))}</span><span class="pc-pos">${p.age} J. · ${esc(TEAMNAME[p.team])}</span><span class="pc-val" style="font-size:13px">${esc(line(p))}</span></span></a>`).join('')}</div>`;
+      out += `<div class="pgrid" style="grid-template-columns:repeat(3,minmax(0,1fr))">${list.slice(0, 3).map((p) => `<a class="pc" href="#/spieler/${p.team}/${p.id}"><span class="pc-media" style="height:120px">${img(pimg(p.img, 'big'), '', p.name, initials(p.name), 'style="height:116px"')}</span><span class="pc-body"><span class="pc-name" style="font-size:15px">${esc(lastName(p.name))}</span><span class="pc-pos">${p.age} J. · ${esc(TEAMNAME[p.team])}</span><span class="pc-val" style="font-size:13px">${esc(line(p))}</span></span></a>`).join('')}</div>`;
     }
     out += `<div class="card flat" style="margin-top:14px"><div class="list">${list.slice(0, 30).map((p, i) => `<a class="li" href="#/spieler/${p.team}/${p.id}"><span class="rank">${i + 1}</span>${img(pimg(p.img, 'medium'), 'avatar sm', p.name, initials(p.name))}
       <span class="grow" style="display:flex;flex-direction:column;gap:5px"><span class="row" style="justify-content:space-between;gap:8px"><span class="t ellipsis">${esc(p.name)}</span><span class="v">${esc(line(p))}</span></span>
@@ -3017,12 +3019,8 @@
     }
     const v = $('#view');
     const ti = TABS.indexOf(r[1]);
-    const depth = path.split('/').length;
-    let dir = '';
-    if (!same && S.route) dir = ti > S.tabIdx ? 'from-right' : ti < S.tabIdx ? 'from-left' : depth > S.depth ? 'from-right' : depth < S.depth ? 'from-left' : '';
+    // Seitenwechsel sofort wie in einer iPhone-App: kein Überblenden (gab auf dem iPhone schwarzes Ruckeln)
     v.innerHTML = html;
-    v.className = '';
-    if (opts.animate !== false && !reduce && (!same || opts.forceAnim)) { void v.offsetWidth; v.className = ('enter ' + dir).trim(); }
     setTab(r[1]);
     const title = typeof r[3] === 'function' ? r[3](m) : r[3];
     const tb = $('#topbar');
@@ -3033,39 +3031,15 @@
     if (!same && !opts.keepScroll) window.scrollTo(0, 0);
     S.route = path;
     S.tabIdx = ti;
-    S.depth = depth;
-    S.level = levelOf(path);
     afterRender(v, opts);
     onScroll();
     saveUI();
-  }
-  // Seitenwechsel: Detailseiten schieben sich wie bei iOS hinein, Tabs gleiten weich hinueber
-  const levelOf = (path) => (/^\/vergleich/.test(path) ? 2 : /^\/(spieler|spiel)\/|^\/mehr\/./.test(path) ? 1 : 0);
-  // Uebergaenge nur, wenn der Browser beim Antippen gerade zeichnet - sonst (App/Fenster im Hintergrund) bliebe der Wechsel haengen
-  S.lastFrame = 0;
-  document.addEventListener('pointerdown', () => requestAnimationFrame(() => { S.lastFrame = performance.now(); }), { passive: true, capture: true });
-  function navRender() {
-    if (!document.startViewTransition || reduce || !D.loaded || !S.route || document.visibilityState !== 'visible' || performance.now() - S.lastFrame > 1500) { render(); return; }
-    const path = (location.hash || '#/home').slice(1) || '/home';
-    if (path === S.route) { render(); return; }
-    const r = ROUTES.find(([re]) => re.test(path)) || ROUTES[0];
-    const ti = TABS.indexOf(r[1]);
-    const lv = levelOf(path);
-    const nav = lv > (S.level || 0) ? 'push' : lv < (S.level || 0) ? 'pop' : ti !== S.tabIdx ? (ti > S.tabIdx ? 'tab-r' : 'tab-l') : 'fade';
-    const root = document.documentElement;
-    root.dataset.nav = nav;
-    const t = document.startViewTransition(() => render({ animate: false, vt: true }));
-    t.ready.catch(() => {}); // uebersprungen (schnelles Tippen, App im Hintergrund) - Seite ist trotzdem gerendert
-    // Sicherung: zeichnet der Browser gerade nicht (App im Hintergrund), haengt der Uebergang sonst mit beiden Seiten uebereinander
-    const wd = setTimeout(() => { try { t.skipTransition(); } catch (e) { /* schon fertig */ } }, 900);
-    t.finished.finally(() => { clearTimeout(wd); if (root.dataset.nav === nav) delete root.dataset.nav; });
   }
   function afterRender(v, opts) {
     raf2(() => {
       $$('.seg-ind[data-to]', v).forEach((el) => { el.style.transform = `translateX(${el.dataset.to}%)`; });
       $$('.ring-svg .val[data-off], .uz-ring .val[data-off]', v).forEach((c) => { c.style.strokeDashoffset = c.dataset.off; });
     });
-    if (opts.animate !== false) countUps(v);
     const tp = $('[data-type]', v);
     if (tp) { store.set('briefSeen', tp.dataset.type); tp.removeAttribute('data-type'); typewriter(tp); }
     mcAfter(v);
@@ -3090,22 +3064,6 @@
     if (ind && S.tabI != null && S.tabI !== i && !reduce) { ind.classList.remove('stretch'); void ind.offsetWidth; ind.classList.add('stretch'); }
     S.tabI = i;
   }
-  function countUps(root) {
-    if (reduce) return;
-    $$('[data-count]', root).forEach((el) => {
-      const to = +el.dataset.count;
-      const fmt = el.dataset.fmt;
-      if (!to) return;
-      const show = (x) => (fmt === 'money' ? money(Math.round(x / 10000) * 10000) : fmt === 'moneyS' ? money(Math.round(x / 100000) * 100000, { short: 1 }) : nf0.format(Math.round(x)));
-      const t0 = performance.now();
-      const step = (now) => {
-        const k = Math.min(1, (now - t0) / 1100);
-        el.textContent = show(to * (1 - Math.pow(1 - k, 4)));
-        if (k < 1) requestAnimationFrame(step); else el.textContent = show(to);
-      };
-      requestAnimationFrame(step);
-    });
-  }
   function typewriter(el) {
     const text = el.textContent;
     let i = 0;
@@ -3128,13 +3086,6 @@
   window.addEventListener('scroll', () => { if (!S._st) { S._st = true; requestAnimationFrame(() => { S._st = false; onScroll(); }); } }, { passive: true });
 
   // ------------------------------------------------------------------ Navigation & Events
-  function navigateVT(href, imgEl) {
-    imgEl.style.viewTransitionName = 'player-photo';
-    const t = document.startViewTransition(() => { history.pushState(null, '', href); S.prev = true; render({ animate: false }); });
-    t.ready.catch(() => {});
-    const wd = setTimeout(() => { try { t.skipTransition(); } catch (e) { /* schon fertig */ } }, 1100);
-    t.finished.finally(() => { clearTimeout(wd); imgEl.style.viewTransitionName = ''; });
-  }
   // Haptik: iOS 18+ gibt beim Umschalten eines Schalters ein kurzes Tick - ein unsichtbarer Schalter macht das nutzbar
   const hapLabel = document.createElement('label');
   hapLabel.className = 'hap';
@@ -3147,11 +3098,6 @@
     if (e.target === hapLabel || hapLabel.contains(e.target)) return;
     if (e.target.closest(HAPTIC)) haptic();
     if (e.target.closest('[data-close]')) { if (S.noClose && Date.now() - S.noClose < 450) return; closeSheet(); return; }
-    const vt = e.target.closest('a[data-vt="player"]');
-    if (vt && !e.metaKey && !e.ctrlKey && document.startViewTransition && !reduce && performance.now() - S.lastFrame < 1500) {
-      const im = $('.pc-media img', vt);
-      if (im) { e.preventDefault(); navigateVT(vt.getAttribute('href'), im); return; }
-    }
     const a = e.target.closest('[data-action]');
     if (!a) return;
     const act = a.dataset.action;
@@ -3406,7 +3352,7 @@
     if (e.key === 'Enter' && e.target.dataset && e.target.dataset.set) { e.target.blur(); return; }
     if (e.key === 'Escape') closeSheet();
   });
-  window.addEventListener('hashchange', () => { S.prev = true; closeSheet(); closeWrapped(); navRender(); });
+  window.addEventListener('hashchange', () => { S.prev = true; closeSheet(); closeWrapped(); render(); });
 
   // Ziehen zum Aktualisieren
   (() => {
@@ -3517,7 +3463,12 @@
 
   // Ladebildschirm: komplett schwarz, bis die Daten da sind - dann fertige Seite zeichnen und weich ausblenden
   async function init() {
-    if ('serviceWorker' in navigator && location.hostname !== 'localhost') navigator.serviceWorker.register('sw.js').catch(() => {});
+    if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
+      // Neue App-Version da: einmal neu laden, damit das Update schon beim ersten Öffnen ankommt
+      const had = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', () => { if (had && !S.swReload) { S.swReload = true; location.reload(); } });
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
     render();
     await loadData(false);
     if (D.loaded && D.matches) S.since = computeSince();

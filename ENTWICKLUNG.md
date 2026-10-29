@@ -70,6 +70,11 @@ erledigte abhaken, danach committen und pushen (siehe `CLAUDE.md`).
       Textauswahl bei langem Tippen aus, Drück-Effekt erst nach 70 ms, Überschriften-Schimmer nur einmal, Glanz ohne
       `mix-blend-mode`, weniger Unschärfe in der Tab-Leiste.
 - [x] Tippspiel: KI-Punkte auf 0 gesetzt (zählen ab 29.10.2026).
+- [x] Runde 2 („immer noch grauenvoll, schwarzes Ruckeln beim Tab-Wechsel, Storys ruckeln“ – am PC alles glatt):
+      View Transitions und Seiten-Einflug raus (Seitenwechsel sofort), alle Deko-Dauer-Animationen aus (u. a. ~40 Lauftexte
+      auf der Transfer-Seite, drehende Story-Ringe, Hintergrund-Licht), Balken-Wachsen aus (~70 im Saison-Tab), Zähl-Animationen
+      aus, Glas-Unschärfe nur noch Tab-Leiste/Kopfzeile, Story ohne unscharfes Foto, nächstes Story-Foto vorgeladen.
+      Updates kommen jetzt beim ersten Öffnen an.
 
 ## Plan bis 10.11.2026 (mit Niklas am 29.10. abgestimmt) – „App deutlich verbessern“
 
