@@ -3433,7 +3433,7 @@
   // ------------------------------------------------------------------ Laden, Live, Timer
   async function loadData(force) {
     const bust = force ? Date.now() : Math.floor(Date.now() / 300000);
-    const res = await Promise.all(FILES.map((f) => fetch(`data/${f}.json?v=${bust}`, { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).catch(() => null)));
+    const res = await Promise.all(FILES.map((f) => fetch(`data/${f}.json?v=${bust}`, { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).catch(() => null).finally(() => { if (S.onFile) S.onFile(); })));
     let any = false;
     FILES.forEach((f, i) => { if (res[i]) { D[f] = res[i]; any = true; } });
     if (any) D.loaded = true;
@@ -3510,30 +3510,45 @@
   }
   const relTick = () => $$('[data-rel]').forEach((el) => { if (el.dataset.rel) el.textContent = rel(el.dataset.rel); });
 
+  // Ladebildschirm: die Prozentzahl zählt weich hoch, während die App wirklich lädt (Dateien, Live-Stände)
+  const SPL = { cur: 0, target: 0, raf: 0 };
+  function splashTo(v) {
+    SPL.target = Math.max(SPL.target, Math.min(100, v));
+    const step = () => {
+      const el = $('#sp-num');
+      if (!el) return;
+      SPL.cur = Math.min(SPL.target, SPL.cur + Math.max(0.7, (SPL.target - SPL.cur) * 0.14));
+      el.textContent = Math.round(SPL.cur);
+      SPL.raf = SPL.cur < SPL.target ? requestAnimationFrame(step) : 0;
+    };
+    if (!SPL.raf) SPL.raf = requestAnimationFrame(step);
+  }
   async function init() {
     if ('serviceWorker' in navigator && location.hostname !== 'localhost') navigator.serviceWorker.register('sw.js').catch(() => {});
     const t0 = Date.now();
-    const hi = $('#splash .sp-hi');
-    if (hi) hi.textContent = userName() ? `Hallo, ${userName()}!` : 'Heja BVB!';
+    splashTo(8);
     render();
+    let done = 0;
+    S.onFile = () => { done += 1; splashTo(8 + done / FILES.length * 77); };
     await loadData(false);
+    S.onFile = null;
+    splashTo(88);
     if (D.loaded && D.matches) S.since = computeSince();
     await pollLive(true);
-    const nm = D.loaded ? nextMatch('profis') : null;
-    const sub = $('#splash .sp-sub');
-    if (sub && nm && daysUntil(nm.date) === 0) {
-      sub.textContent = `${isLive(nm) ? 'Läuft gerade' : nm.timeKnown === false ? 'Heute' : 'Heute ' + F.time.format(new Date(nm.date)) + ' Uhr'} · ${tname(nm.home)} – ${tname(nm.away)}`;
-      sub.classList.add('on');
-      if (hi) hi.textContent = `Spieltag, ${userName() || 'Borusse'}!`;
-    }
-    const wait = Math.max(0, (reduce ? 200 : 1650) - (Date.now() - t0));
-    setTimeout(() => {
+    splashTo(100);
+    const wait = Math.max(0, (reduce ? 150 : 1100) - (Date.now() - t0));
+    const finish = () => {
+      if (SPL.cur < 100 && Date.now() - t0 < 4000) { setTimeout(finish, 40); return; }
       const sp = $('#splash');
-      sp.classList.add('out');
-      setTimeout(() => render({ forceAnim: true }), reduce ? 0 : 380);
-      setTimeout(() => sp.classList.add('gone'), reduce ? 0 : 700);
-      setTimeout(() => sp.remove(), reduce ? 50 : 1100);
-    }, wait);
+      if (!sp) return;
+      setTimeout(() => {
+        sp.classList.add('out');
+        setTimeout(() => render({ forceAnim: true }), reduce ? 0 : 200);
+        setTimeout(() => sp.classList.add('gone'), reduce ? 0 : 480);
+        setTimeout(() => sp.remove(), reduce ? 50 : 700);
+      }, reduce ? 0 : 180);
+    };
+    setTimeout(finish, wait);
     setInterval(tick, 1000);
     setInterval(relTick, 30000);
     setInterval(applyDaytime, 60000);

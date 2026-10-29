@@ -56,7 +56,7 @@ erledigte abhaken, danach committen und pushen (siehe `CLAUDE.md`).
 - [ ] **Prognose-System upgraden (CL + alle Teams):** nicht nur PSG (Platz 5 bei den Titel-Favoriten), sondern alle
       Teams prüfen, das Modell verbessern und sicherstellen, dass die automatische Berechnung nach jedem Spiel genauso
       gut läuft wie bei einer Prüfung von Hand. Hinweis: Prognosen rechnet Code (forecast.py), nicht die KI.
-- [ ] **Ladebildschirm:** komplett schwarz, in der Mitte nur eine weiße, leuchtende Prozentzahl (Glow) –
+- [x] **Ladebildschirm:** komplett schwarz, in der Mitte nur eine weiße, leuchtende Prozentzahl (Glow) –
       kein Balken, kein Strich, sonst nichts.
 
 ## Langzeit-Test vom 28.10.2026 (3 Saisons)

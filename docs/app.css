@@ -71,17 +71,12 @@ h1, h2, h3, p { margin: 0; }
 .press:active { transform: scale(.965); }
 
 /* ---------------------------------------------------------------- Start */
-#splash {
-  position: fixed; inset: 0; z-index: 200; background: var(--bg);
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
-}
-#splash .sp-logo { width: 120px; height: 120px; }
-#splash .sp-ring { fill: none; stroke: var(--y); stroke-width: 2.2; stroke-dasharray: 120; stroke-dashoffset: 120; animation: spDraw 1s var(--ease) forwards; }
-#splash .sp-disc { fill: var(--y); opacity: 0; transform-origin: 20px 20px; animation: spDisc .6s var(--spring) forwards .55s; }
-#splash .sp-txt { opacity: 0; animation: fadeUp .5s var(--ease) forwards .85s; }
-#splash .sp-wipe { position: absolute; inset: 0; background: var(--y); transform: translateY(101%); }
-#splash.out .sp-wipe { animation: wipe .75s cubic-bezier(.77, 0, .18, 1) forwards; }
-#splash.gone { animation: fadeOut .35s ease forwards; }
+/* Ladebildschirm: komplett schwarz, nur eine weiß leuchtende Prozentzahl in der Mitte */
+#splash { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; background: #000; transition: opacity .45s ease; }
+.sp-pct { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter Tight', system-ui, sans-serif; font-weight: 200; font-size: 64px; line-height: 1; letter-spacing: -1px; color: #fff; font-variant-numeric: tabular-nums; text-shadow: 0 0 10px rgba(255, 255, 255, .9), 0 0 28px rgba(255, 255, 255, .55), 0 0 64px rgba(255, 255, 255, .3); animation: spGlow 2.4s ease-in-out infinite; }
+#splash.out { opacity: 0; }
+#splash.gone { display: none; }
+@keyframes spGlow { 50% { text-shadow: 0 0 14px rgba(255, 255, 255, 1), 0 0 38px rgba(255, 255, 255, .7), 0 0 84px rgba(255, 255, 255, .38); } }
 
 .safe-top {
   position: fixed; top: 0; left: 0; right: 0; height: var(--safe-t); z-index: 45;
@@ -1308,7 +1303,6 @@ body.has-live #toast { bottom: calc(var(--tabbar) + var(--safe-b) + 72px); }
 .rm *, .rm *::before, .rm *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 
 /* ---------------------------------------------------------------- Mega-Update: Startbildschirm "Flutlicht an" */
-#splash { overflow: hidden; isolation: isolate; }
 
 /* ---------------------------------------------------------------- Tageszeit-Design */
 .ambient { background: radial-gradient(closest-side, var(--amb, rgba(253, 225, 0, .13)), transparent 72%); }
@@ -1430,28 +1424,6 @@ body.has-live #toast { bottom: calc(var(--tabbar) + var(--safe-b) + 72px); }
 @keyframes vtPopInDim { from { transform: translateX(-26%); filter: brightness(.35); } }
 
 /* ---------------------------------------------------------------- Startbildschirm v3: TV-Intro statt Stadionlicht */
-#splash { overflow: hidden; isolation: isolate; }
-#splash .sp-center { position: relative; z-index: 3; display: flex; flex-direction: column; align-items: center; gap: 16px; }
-.sp-stripes { position: absolute; inset: -60%; z-index: 0; background: repeating-linear-gradient(115deg, rgba(253, 225, 0, .05) 0 26px, transparent 26px 72px); animation: stripes 5s linear infinite; }
-.sp-bars { position: absolute; inset: 0; z-index: 4; overflow: hidden; pointer-events: none; }
-.sp-bars i { position: absolute; left: -50%; width: 200%; height: 84px; background: var(--y); box-shadow: 0 0 40px rgba(253, 225, 0, .35); transform: rotate(-14deg) translateX(-105%); animation: spBar .95s cubic-bezier(.75, 0, .2, 1) forwards; }
-.sp-bars i:nth-child(1) { top: 28%; animation-delay: .02s; }
-.sp-bars i:nth-child(2) { top: calc(28% + 92px); height: 14px; background: #fff; animation-delay: .09s; }
-.sp-bars i:nth-child(3) { top: calc(28% + 114px); height: 46px; animation-delay: .15s; }
-.sp-badge { position: relative; opacity: 0; animation: spBadge .7s var(--spring) forwards .5s; }
-.sp-badge::after { content: ""; position: absolute; inset: -12px; border-radius: 50%; border: 3px solid var(--y); opacity: 0; animation: spRing 1s ease-out forwards .62s; }
-#splash .sp-logo { width: 112px; height: 112px; filter: drop-shadow(0 12px 34px rgba(253, 225, 0, .4)); }
-#splash .sp-ring { animation-duration: .6s; animation-delay: .5s; }
-#splash .sp-disc { animation-delay: .55s; }
-#splash .sp-txt { animation-delay: .7s; }
-.sp-title { display: flex; flex-direction: column; align-items: center; line-height: .84; }
-.sp-title span { display: block; overflow: hidden; padding: 0 4px; }
-.sp-title b { display: block; font-family: var(--display); font-weight: 900; font-size: clamp(46px, 15.5vw, 72px); letter-spacing: .02em; text-transform: uppercase; color: var(--text); transform: translateY(108%); animation: spTitle .6s var(--ease) forwards .74s; }
-.sp-title span:nth-child(2) b { color: var(--y); animation-delay: .84s; }
-.sp-hi { font-family: var(--display); font-weight: 900; font-size: 19px; letter-spacing: 3px; text-transform: uppercase; color: var(--text); opacity: 0; animation: fadeUp .5s var(--ease) forwards 1.05s; }
-.sp-sub { margin-top: -8px; font-size: 12px; font-weight: 700; color: var(--y); opacity: 0; }
-.sp-sub:empty { display: none; }
-.sp-sub.on { animation: fadeUp .45s var(--ease) forwards 1.12s; }
 @keyframes spBar { 0% { transform: rotate(-14deg) translateX(-105%); } 50% { transform: rotate(-14deg) translateX(0); } 100% { transform: rotate(-14deg) translateX(105%); } }
 @keyframes spBadge { from { opacity: 0; transform: scale(.35) rotate(-120deg); } to { opacity: 1; transform: none; } }
 @keyframes spRing { 0% { opacity: .9; transform: scale(.85); } 100% { opacity: 0; transform: scale(1.9); } }
