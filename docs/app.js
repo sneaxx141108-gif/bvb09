@@ -787,8 +787,8 @@
       <section class="st-slide ps ${tone}">
         ${it.img ? img(it.img, 'st-bg', '', '', 'aria-hidden="true"') : ''}
         <div class="st-glow" aria-hidden="true"></div>
-        <div class="st-hero">${it.img ? img(it.img, 'st-photo', it.name, initials(it.name)) : `<span class="st-photo st-nophoto">${SIL_SOFT}</span>`}
-          ${it.number ? `<span class="st-num">${esc(it.number)}</span>` : ''}</div>
+        <div class="st-hero"><div class="st-pic">${it.img ? img(it.img, 'st-photo', it.name, initials(it.name)) : `<span class="st-photo st-nophoto">${SIL_SOFT}</span>`}
+          ${it.number ? `<span class="st-num">${esc(it.number)}</span>` : ''}</div></div>
         <div class="st-sheet">
           <span class="st-pill">${pill}</span>
           <div><h2 class="st-title">${esc(it.name)}</h2><div class="st-meta">${esc(metaOf(it))}</div></div>
