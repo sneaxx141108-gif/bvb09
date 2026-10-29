@@ -62,6 +62,15 @@ erledigte abhaken, danach committen und pushen (siehe `CLAUDE.md`).
 - [x] **Liga-Torjäger raus aus dem Saison-Tab** (nicht zu den Prognosen!). Dafür „Top-Spieler“ (Torschützen, Vorlagen,
       Scorer, alle Vereine) unter der Bundesliga- und der CL-Tabelle – ESPN-Statistik (`espn_leaders`, `tables.leaders`).
 
+## iPhone-Feinschliff vom 29.10.2026 (Niklas, iPhone 12)
+
+- [x] Story: komische Anfangs-Animation (Zoom aus dem Kreis) → kurzes Einblenden; Fortschrittsbalken per `transform`.
+- [x] Ladebildschirm: Prozentzahl komplett weg, nur schwarz.
+- [x] Ruckeln beim langen Tippen/Scrollen: Licht beim Antippen entfernt, Einblenden beim Scrollen entfernt, iOS-Menü und
+      Textauswahl bei langem Tippen aus, Drück-Effekt erst nach 70 ms, Überschriften-Schimmer nur einmal, Glanz ohne
+      `mix-blend-mode`, weniger Unschärfe in der Tab-Leiste.
+- [x] Tippspiel: KI-Punkte auf 0 gesetzt (zählen ab 29.10.2026).
+
 ## Plan bis 10.11.2026 (mit Niklas am 29.10. abgestimmt) – „App deutlich verbessern“
 
 Die drei BVB-Spiele sind Live-Tests (Niklas nutzt die App beim Spiel und meldet, was hakt):

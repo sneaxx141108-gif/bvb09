@@ -744,14 +744,14 @@
 
   // ------------------------------------------------------------------ Story-Ansicht
   const ST = { items: [], i: 0, down: null, held: false, holdT: null };
-  function openStories(items, i, fromEl) {
+  function openStories(items, i) {
     ST.items = items;
     ST.i = i;
     const el = $('#story');
-    if (fromEl) { const r = fromEl.getBoundingClientRect(); el.style.transformOrigin = `${r.left + r.width / 2}px ${r.top + r.height / 2}px`; }
     el.hidden = false;
     el.classList.remove('closing');
-    if (!reduce) { el.classList.add('opening'); setTimeout(() => el.classList.remove('opening'), 520); }
+    // Öffnen: nur kurz einblenden (kein Zoom aus dem Kreis - wirkte auf dem iPhone komisch)
+    if (!reduce) { el.classList.add('opening'); setTimeout(() => el.classList.remove('opening'), 260); }
     document.body.style.overflow = 'hidden';
     renderStory();
   }
@@ -2099,6 +2099,9 @@
   const tipsAll = () => store.get('tips', {});
   const myTip = (id) => tipsAll()[id] || null;
   const kiTip = (m) => (mcOf(m.id).model || {}).tip || (mcOf(m.id).preview || {}).tip || null;
+  // KI-Punkte hat Niklas am 29.10.2026 auf 0 gesetzt: es zählen nur Spiele ab dann (neue Saison zählt ohnehin neu)
+  const KI_FROM = Date.parse('2026-10-29T00:00:00+01:00');
+  const kiPts = (m) => (Date.parse(m.date) >= KI_FROM ? tipPts(kiTip(m), m) : null);
   const probBar = (mt) => (mt && mt.probs ? `<div class="pb" role="img" aria-label="Sieg ${mt.probs.w} Prozent, Remis ${mt.probs.d} Prozent, Niederlage ${mt.probs.l} Prozent">${[['w', 'Sieg'], ['d', 'Remis'], ['l', 'Niederl.']].map(([k, l]) => `<span class="pb-${k}" style="--w:${Math.max(8, mt.probs[k])}%"><b>${nf0.format(mt.probs[k])}%</b><em>${l}</em></span>`).join('')}</div>` : '');
   const srcTxt = (mt) => (mt.src === 'quoten' ? 'aus den Wettquoten' : 'aus den Spielstärken');
   const tipOpen = (m) => !m.finished && Date.parse(m.date) > Date.now();
@@ -2117,7 +2120,7 @@
       const t = myTip(m.id);
       const k = kiTip(m);
       const pm = tipPts(t, m);
-      const pk = tipPts(k, m);
+      const pk = kiPts(m);
       if (pm != null) {
         out.me += pm; out.n += 1;
         if (pm === 3) out.exact += 1;
@@ -2354,7 +2357,7 @@
         <p class="faint" style="font-size:12px;font-weight:600;text-align:center">${t ? `Gespeichert: ${tipStr(t, m)} · änderbar bis zum Anpfiff` : 'Änderbar bis zum Anpfiff'}</p></section>`;
     } else {
       const pm = tipPts(t, m);
-      const pk = tipPts(k, m);
+      const pk = kiPts(m);
       const col = (label, val, pts, cls = '') => `<div><span class="eyebrow">${label}</span><b class="${cls}">${val}</b>${pts != null ? `<span class="pts p${pts}">+${pts}</span>` : ''}</div>`;
       out += `<section class="card tp-res" style="margin-top:14px"><div class="tp-cols">${col('Dein Tipp', t ? tipStr(t, m) : '–', pm)}${col('Ergebnis', m.finished && m.score ? scoreStr(m) : 'läuft', null, 'yellow')}${col('KI-Tipp', k ? tipStr(k, m) : '–', pk)}</div>
         <p class="faint" style="font-size:12px;font-weight:600;text-align:center">${!m.finished ? 'Punkte gibt es nach dem Abpfiff.' : !t ? 'Für dieses Spiel hast du nicht getippt.' : pm === 3 ? 'Volltreffer!' : pm ? 'Gut getippt!' : 'Diesmal leider daneben.'}</p></section>`;
@@ -2508,7 +2511,7 @@
         }
       }
       const pm = tipPts(myTip(m.id), m);
-      const pk = tipPts(kiTip(m), m);
+      const pk = kiPts(m);
       if (pm != null) { x.me += pm; x.tipped += 1; }
       if (pk != null) x.ki += pk;
     }
@@ -3073,12 +3076,6 @@
     if (S.cmpPick && (S.route || '').startsWith('/vergleich')) { const sd = S.cmpPick; S.cmpPick = null; setTimeout(() => openCmpPick(sd), reduce ? 0 : 320); }
     const tabOn = $('.tabs a.on', v);
     if (tabOn) { const nav = tabOn.parentElement; nav.scrollLeft = tabOn.offsetLeft - (nav.clientWidth - tabOn.clientWidth) / 2; }
-    if (S.io) S.io.disconnect();
-    if (!reduce && (opts.animate !== false || opts.vt) && 'IntersectionObserver' in window) {
-      S.io = new IntersectionObserver((es) => es.forEach((en) => { if (en.isIntersecting) { en.target.classList.add('rv-in'); S.io.unobserve(en.target); } }), { rootMargin: '0px 0px -6% 0px' });
-      const fold = window.innerHeight;
-      [...v.children].forEach((el) => { if (el.getBoundingClientRect().top > fold) { el.classList.add('rv'); S.io.observe(el); } });
-    }
   }
   function setTab(t) {
     S.tab = t;
@@ -3316,17 +3313,6 @@
     if (e.target && e.target.dataset && e.target.dataset.set === 'name') toast(userName() ? `Hallo ${userName()}!` : 'Name entfernt – die App sagt jetzt „Borusse“');
   });
 
-  // Licht beim Antippen: kurzer Flutlicht-Schein an der Fingerspitze
-  document.addEventListener('pointerdown', (e) => {
-    if (reduce || e.button > 0 || !e.target.closest || !e.target.closest('a, button, [data-action], .tile, .pc, .ticket')) return;
-    const g = document.createElement('i');
-    g.className = 'tglow';
-    g.style.left = e.clientX + 'px';
-    g.style.top = e.clientY + 'px';
-    document.body.appendChild(g);
-    setTimeout(() => g.remove(), 700);
-  }, { passive: true });
-
   // Sheet: am Griff nach unten ziehen zum Schliessen
   (() => {
     let d = null;
@@ -3452,7 +3438,7 @@
   // ------------------------------------------------------------------ Laden, Live, Timer
   async function loadData(force) {
     const bust = force ? Date.now() : Math.floor(Date.now() / 300000);
-    const res = await Promise.all(FILES.map((f) => fetch(`data/${f}.json?v=${bust}`, { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).catch(() => null).finally(() => { if (S.onFile) S.onFile(); })));
+    const res = await Promise.all(FILES.map((f) => fetch(`data/${f}.json?v=${bust}`, { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).catch(() => null)));
     let any = false;
     FILES.forEach((f, i) => { if (res[i]) { D[f] = res[i]; any = true; } });
     if (any) D.loaded = true;
@@ -3529,45 +3515,20 @@
   }
   const relTick = () => $$('[data-rel]').forEach((el) => { if (el.dataset.rel) el.textContent = rel(el.dataset.rel); });
 
-  // Ladebildschirm: die Prozentzahl zählt weich hoch, während die App wirklich lädt (Dateien, Live-Stände)
-  const SPL = { cur: 0, target: 0, raf: 0 };
-  function splashTo(v) {
-    SPL.target = Math.max(SPL.target, Math.min(100, v));
-    const step = () => {
-      const el = $('#sp-num');
-      if (!el) return;
-      SPL.cur = Math.min(SPL.target, SPL.cur + Math.max(0.7, (SPL.target - SPL.cur) * 0.14));
-      el.textContent = Math.round(SPL.cur);
-      SPL.raf = SPL.cur < SPL.target ? requestAnimationFrame(step) : 0;
-    };
-    if (!SPL.raf) SPL.raf = requestAnimationFrame(step);
-  }
+  // Ladebildschirm: komplett schwarz, bis die Daten da sind - dann fertige Seite zeichnen und weich ausblenden
   async function init() {
     if ('serviceWorker' in navigator && location.hostname !== 'localhost') navigator.serviceWorker.register('sw.js').catch(() => {});
-    const t0 = Date.now();
-    splashTo(8);
     render();
-    let done = 0;
-    S.onFile = () => { done += 1; splashTo(8 + done / FILES.length * 77); };
     await loadData(false);
-    S.onFile = null;
-    splashTo(88);
     if (D.loaded && D.matches) S.since = computeSince();
-    await pollLive(true);
-    splashTo(100);
-    const wait = Math.max(0, (reduce ? 150 : 1100) - (Date.now() - t0));
-    const finish = () => {
-      if (SPL.cur < 100 && Date.now() - t0 < 4000) { setTimeout(finish, 40); return; }
-      const sp = $('#splash');
-      if (!sp) return;
-      setTimeout(() => {
-        sp.classList.add('out');
-        setTimeout(() => render({ forceAnim: true }), reduce ? 0 : 200);
-        setTimeout(() => sp.classList.add('gone'), reduce ? 0 : 480);
-        setTimeout(() => sp.remove(), reduce ? 50 : 700);
-      }, reduce ? 0 : 180);
-    };
-    setTimeout(finish, wait);
+    // Live-Stände: höchstens 2,5 s warten, damit der schwarze Bildschirm nie hängen bleibt
+    await Promise.race([pollLive(true).catch(() => {}), new Promise((r) => setTimeout(r, 2500))]);
+    const sp = $('#splash');
+    if (sp) {
+      render({ forceAnim: true });
+      raf2(() => sp.classList.add('out'));
+      setTimeout(() => sp.remove(), reduce ? 50 : 450);
+    }
     setInterval(tick, 1000);
     setInterval(relTick, 30000);
     setInterval(applyDaytime, 60000);

@@ -103,8 +103,12 @@ Ohne `GEMINI_API_KEY` laufen alle Module außer den KI-Texten. Python nur mit St
 - Fertig: Mega-Update (Spieltag-Zentrale, Tippspiel, Konferenz, Saison-Tab mit BL- und CL-Prognose, Lieblingsspieler,
   Einstellungen, Spielervergleich, Ranglisten Tore/Vorlagen/Scorer, 13 Formationen, Design mit Glas, Tageszeit,
   Haptik, Seitenwechsel ohne Überlappung).
-- Ladebildschirm (Wunsch Niklas, 29.10.2026): komplett schwarz, nur eine weiß leuchtende Prozentzahl in der Mitte, die mit dem
-  echten Laden hochzählt – kein Logo, kein Balken, kein Strich.
+- Ladebildschirm (Wunsch Niklas, 29.10.2026, zuletzt geändert): **einfach nur schwarz** – keine Prozentzahl, kein Logo,
+  kein Balken. Blendet weich aus, sobald die Seite fertig ist (Live-Stände höchstens 2,5 s abwarten).
+- Flüssig aufs iPhone (12) ausgelegt: keine Dauer-Effekte, die ständig neu zeichnen (z. B. `background-position`-Animationen,
+  `mix-blend-mode`), kein Licht beim Antippen, kein Einblenden beim Scrollen, langes Tippen ohne iOS-Menü/Textauswahl,
+  Drück-Effekt mit kurzer Verzögerung. Story öffnet mit kurzem Einblenden (kein Zoom).
+- Tippspiel: KI-Punkte am 29.10.2026 auf 0 gesetzt (`KI_FROM` in `app.js`) – zählen nur Spiele ab dann.
 - GitHub Pages ist an (Quelle „GitHub Actions“, seit 28.10.2026), die App ist online.
 - Repository auf Niklas' Laptop: `C:\Users\Admin\Documents\bvb09` (Git + Git Credential Manager installiert).
   Lokale Hilfsordner `bvb09-main/`, `screenshots/`, `.claude/` stehen in `.git/info/exclude` – nie committen.

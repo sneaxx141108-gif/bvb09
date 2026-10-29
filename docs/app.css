@@ -36,6 +36,10 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
 html { background: var(--bg); -webkit-text-size-adjust: 100%; }
+/* Wie eine echte App: langes Tippen öffnet kein Link-/Bild-Menü und markiert keinen Text (Eingabefelder ausgenommen) */
+html { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+input, textarea, select, [contenteditable] { -webkit-touch-callout: default; -webkit-user-select: text; user-select: text; }
+img { -webkit-user-drag: none; }
 body {
   margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
   font-family: var(--font); font-size: 15px; line-height: 1.45; letter-spacing: -.005em;
@@ -69,14 +73,13 @@ h1, h2, h3, p { margin: 0; }
 .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .press { transition: transform .25s var(--spring); }
 .press:active { transform: scale(.965); }
+/* Drück-Effekt erst nach einem Moment: wer nur scrollt, lässt so keine Karte zucken */
+.press:active, .chips button:active, .teams button:active, .btn:active, .tile:active, .ticket:active, .pc:active, .mtile:active, .fav:active, .set-seg button:active, .tmk:active, .wr-mcard:active { transition: transform .16s ease .07s; }
 
 /* ---------------------------------------------------------------- Start */
-/* Ladebildschirm: komplett schwarz, nur eine weiß leuchtende Prozentzahl in der Mitte */
-#splash { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; background: #000; transition: opacity .45s ease; }
-.sp-pct { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter Tight', system-ui, sans-serif; font-weight: 800; font-size: 68px; line-height: 1; letter-spacing: -1px; color: #fff; font-variant-numeric: tabular-nums; text-shadow: 0 0 10px rgba(255, 255, 255, .9), 0 0 28px rgba(255, 255, 255, .55), 0 0 64px rgba(255, 255, 255, .3); animation: spGlow 2.4s ease-in-out infinite; }
-#splash.out { opacity: 0; }
-#splash.gone { display: none; }
-@keyframes spGlow { 50% { text-shadow: 0 0 14px rgba(255, 255, 255, 1), 0 0 38px rgba(255, 255, 255, .7), 0 0 84px rgba(255, 255, 255, .38); } }
+/* Ladebildschirm: einfach nur schwarz, bis die App fertig ist */
+#splash { position: fixed; inset: 0; z-index: 200; background: #000; transition: opacity .35s ease; }
+#splash.out { opacity: 0; pointer-events: none; }
 
 .safe-top {
   position: fixed; top: 0; left: 0; right: 0; height: var(--safe-t); z-index: 45;
@@ -624,12 +627,13 @@ h1, h2, h3, p { margin: 0; }
 
 /* ---------------------------------------------------------------- Story-Ansicht */
 #story { position: fixed; inset: 0; z-index: 90; background: #000; overflow: hidden; touch-action: none; }
-#story.opening { animation: storyIn .5s var(--ease) both; }
+#story.opening { animation: fadeIn .22s ease-out both; }
+#story.opening .st-pic, #story.opening .st-sheet, #story.opening .st-info { animation: none; }
 #story.closing { animation: storyOut .3s ease-in both; }
 .st-bars { position: absolute; top: calc(var(--safe-t) + 10px); left: 10px; right: 10px; display: flex; gap: 4px; z-index: 6; }
 .st-bar { flex: 1; height: 3px; border-radius: 3px; background: rgba(255, 255, 255, .28); overflow: hidden; }
-.st-bar i { display: block; height: 100%; width: 0; border-radius: 3px; background: #fff; }
-.st-bar.done i { width: 100%; }
+.st-bar i { display: block; height: 100%; width: 100%; border-radius: 3px; background: #fff; transform: scaleX(0); transform-origin: left; }
+.st-bar.done i { transform: none; }
 .st-bar.on i { animation: stbar var(--dur, 6s) linear forwards; }
 #story.paused .st-bar.on i { animation-play-state: paused; }
 #story.hwg .st-bar { background: rgba(10, 9, 0, .22); }
@@ -657,7 +661,7 @@ h1, h2, h3, p { margin: 0; }
 .st-glow { position: absolute; inset: 0; z-index: -1; pointer-events: none; background: radial-gradient(120% 60% at 50% 105%, rgba(var(--acc-rgb), .2), transparent 65%), linear-gradient(180deg, transparent 40%, rgba(5, 5, 5, .85) 75%, #050505); }
 .st-hero { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: calc(var(--safe-t) + 78px) 24px 18px; }
 .st-pic { position: relative; height: 100%; max-height: 300px; aspect-ratio: 4 / 5; max-width: 100%; border-radius: 28px; overflow: hidden; box-shadow: 0 0 0 1px rgba(var(--acc-rgb), .45), 0 0 60px rgba(var(--acc-rgb), .18), 0 30px 60px rgba(0, 0, 0, .55); animation: inUp .7s var(--ease) both .05s; }
-.st-pic .st-photo { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center 18%; animation: stKen 10s ease-out both; }
+.st-pic .st-photo { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center 18%; }
 .st-pic::after { content: ""; position: absolute; inset: 55% 0 0; background: linear-gradient(180deg, transparent, rgba(0, 0, 0, .55)); pointer-events: none; }
 .st-nophoto .tc-sil { left: 50%; right: auto; bottom: 18%; transform: translateX(-50%); width: 46%; height: 60%; }
 .st-num { position: absolute; z-index: 2; right: 14px; bottom: 10px; font-family: var(--display); font-weight: 900; font-size: 48px; line-height: .8; color: transparent; -webkit-text-stroke: 1.2px rgba(255, 255, 255, .8); }
@@ -694,7 +698,6 @@ h1, h2, h3, p { margin: 0; }
 .st-src-t { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
 .st-src-t b { font-size: 14px; font-weight: 800; }
 .st-src-t span { font-size: 11px; font-weight: 600; color: rgba(255, 255, 255, .65); }
-@keyframes stKen { from { transform: scale(1.12); } to { transform: scale(1); } }
 @keyframes stDot { 50% { opacity: .35; } }
 @media (max-height: 720px) {
   .st-sheet { gap: 10px; }
@@ -762,9 +765,8 @@ h1, h2, h3, p { margin: 0; }
 @keyframes shimmer { to { transform: translateX(100%); } }
 @keyframes sheetUp { from { transform: translateY(100%); } to { transform: none; } }
 @keyframes sheetDown { to { transform: translateY(100%); } }
-@keyframes stbar { from { width: 0; } to { width: 100%; } }
+@keyframes stbar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes stImg { from { opacity: 0; transform: translate(-50%, 40px) scale(.96); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
-@keyframes storyIn { from { opacity: 0; transform: scale(.4); border-radius: 50%; } to { opacity: 1; transform: none; border-radius: 0; } }
 @keyframes storyOut { to { opacity: 0; transform: scale(.9) translateY(40px); } }
 @keyframes ping { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(3); opacity: 0; } }
 .ping { transform-box: fill-box; transform-origin: center; animation: ping 1.8s ease-out infinite; }
@@ -1337,16 +1339,13 @@ body.has-live #toast { bottom: calc(var(--tabbar) + var(--safe-b) + 72px); }
 @keyframes vtFadeOut { to { opacity: 0; transform: scale(.985); } }
 @keyframes vtFadeIn { from { opacity: 0; transform: scale(1.015); } }
 
-/* Beim Scrollen einblenden + kleine Extras */
-.rv { opacity: 0; transform: translateY(30px) scale(.985); transition: opacity .7s var(--ease), transform .85s var(--ease); }
-.rv.rv-in { opacity: 1; transform: none; }
-.enter > .rv { animation: none; }
+/* Kleine Extras */
 .tab.on svg { animation: tabPop .55s var(--spring); }
 @keyframes tabPop { 0% { transform: scale(.7); } 55% { transform: scale(1.2); } 100% { transform: scale(1.08); } }
 
 /* ---------------------------------------------------------------- Design-Durchgang: Glas, Licht, Glanz */
 /* Tab-Leiste im Liquid-Glass-Stil */
-#tabbar { background: linear-gradient(180deg, rgba(46, 46, 46, .58), rgba(16, 16, 16, .74)); -webkit-backdrop-filter: blur(30px) saturate(190%); backdrop-filter: blur(30px) saturate(190%);
+#tabbar { background: linear-gradient(180deg, rgba(46, 46, 46, .58), rgba(16, 16, 16, .74)); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%);
   box-shadow: 0 24px 54px rgba(0, 0, 0, .78), inset 0 1px 0 rgba(255, 255, 255, .16), inset 0 -1px 0 rgba(255, 255, 255, .04), inset 0 0 0 1px rgba(255, 255, 255, .08); }
 #tabbar::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(180deg, rgba(255, 255, 255, .09), transparent 46%); }
 .tab-ind { background: linear-gradient(180deg, #FFF27A, var(--y) 52%, #EED200); box-shadow: 0 8px 24px rgba(253, 225, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .65), inset 0 -2px 5px rgba(140, 110, 0, .28); }
@@ -1357,17 +1356,17 @@ body.has-live #toast { bottom: calc(var(--tabbar) + var(--safe-b) + 72px); }
 /* Glanz, der ueber gelbe Flaechen streicht */
 .tile.y::after, .mtile.y::after, .card-y::after, .set-me::after, .konf-hero::after, .btn:not(.ghost)::after, #toast::after {
   content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; border-radius: inherit;
-  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, .55) 48%, rgba(255, 255, 255, .1) 54%, transparent 68%);
-  mix-blend-mode: soft-light; transform: translateX(-130%); animation: shine 7.5s ease-in-out infinite 1.2s; }
+  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, .3) 48%, rgba(255, 255, 255, .06) 54%, transparent 68%);
+  transform: translateX(-130%); animation: shine 7.5s ease-in-out infinite 1.2s; }
 .mtile.y::after { animation-delay: 2.4s; }
 .card-y::after { animation-delay: .6s; }
 .btn:not(.ghost) { position: relative; overflow: hidden; background: linear-gradient(180deg, #FFF06A, var(--y) 50%, #F2D600); box-shadow: 0 12px 28px rgba(253, 225, 0, .26), inset 0 1px 0 rgba(255, 255, 255, .6); }
 .btn:not(.ghost)::after { animation-duration: 5s; animation-delay: 3s; }
 @keyframes shine { 0%, 62% { transform: translateX(-130%); } 82%, 100% { transform: translateX(130%); } }
 
-/* Ueberschriften: Flutlicht-Schimmer und Akzentbalken */
+/* Ueberschriften: Flutlicht-Schimmer (einmal beim Öffnen der Seite) und Akzentbalken */
 .ptitle h1 em, .hello h1 em { color: transparent; background: linear-gradient(100deg, var(--y) 38%, #FFFBD0 50%, var(--y) 62%) 0 0 / 260% 100%; -webkit-background-clip: text; background-clip: text;
-  text-shadow: none; filter: drop-shadow(0 0 22px rgba(253, 225, 0, .32)); animation: titleSheen 6.5s ease-in-out infinite; }
+  text-shadow: none; filter: drop-shadow(0 0 22px rgba(253, 225, 0, .32)); animation: titleSheen 2.8s ease-in-out .3s 1 both; }
 @keyframes titleSheen { 0%, 55% { background-position: 100% 0; } 85%, 100% { background-position: 0 0; } }
 .sec-h h2 { display: flex; align-items: center; gap: 9px; }
 .sec-h h2::before { content: ""; flex: none; width: 4px; height: .74em; border-radius: 3px; background: linear-gradient(180deg, #FFF27A, var(--y)); box-shadow: 0 0 12px rgba(253, 225, 0, .55); }
@@ -1377,10 +1376,6 @@ body.has-live #toast { bottom: calc(var(--tabbar) + var(--safe-b) + 72px); }
 .tabs a.on { text-shadow: 0 0 18px rgba(253, 225, 0, .35); }
 .table td:first-child { white-space: nowrap; }
 
-/* Licht beim Antippen */
-.tglow { position: fixed; z-index: 140; left: 0; top: 0; width: 150px; height: 150px; margin: -75px 0 0 -75px; border-radius: 50%; pointer-events: none;
-  background: radial-gradient(closest-side, rgba(255, 244, 170, .3), rgba(253, 225, 0, .1) 55%, transparent 72%); mix-blend-mode: plus-lighter; animation: tglow .62s cubic-bezier(.2, .8, .3, 1) forwards; }
-@keyframes tglow { from { opacity: 1; transform: scale(.25); } to { opacity: 0; transform: scale(1.35); } }
 .hap { position: fixed; left: -200px; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; overflow: hidden; }
 
 /* Toast als Glas-Pille */
