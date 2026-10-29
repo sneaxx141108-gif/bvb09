@@ -766,39 +766,36 @@
     const first = !seen[k];
     seen[k] = Date.now();
     store.set('seen', seen);
-    const word = wordOf(it, 5);
-    // Spieler-Story: Foto als gerahmte Karte mit Status-Sticker an der Ecke (nichts überlappt Kopfzeile oder Gesicht),
-    // darunter das Info-Blatt – passt von iPhone SE bis Pro Max, mit und ohne Notch
+    // Spieler-Story im modernen Look: randloses Foto, das nach unten ausläuft, Status als Glas-Pille,
+    // Name groß, Wechsel und Zahlen als Glas-Kacheln – passt von iPhone SE bis Pro Max, mit und ohne Notch
     const tone = big ? 'hwg' : it.status === 'denied' ? 'deny' : 'soft';
-    const sticker = big ? st.stamp : it.probability != null && tone !== 'deny' ? `${esc(st.label)}<small>${it.probability} %</small>` : esc(st.label);
+    const pill = `${big ? I.check : '<i aria-hidden="true"></i>'}${esc(st.label)}${!big && tone !== 'deny' && it.probability != null ? ` · ${it.probability} %` : ''}`;
     const club = (c) => `<span class="st-club">${crest(c, 'crest')}<span class="ellipsis">${esc(c && c.name ? (isBVBName(c.name) ? 'BVB' : c.name) : UNK)}</span></span>`;
     // Ablöse direkt auf dem Transfer-Pfeil (nur wenn bekannt)
     const fee = it.feeValue ? money(it.feeValue, { short: 1 }) : it.loan ? 'Leihe' : it.fee && !['-', '?', UNK].includes(String(it.fee)) ? String(it.fee) : '';
     const clubs = it.dir === 'extension' || it.status === 'extension'
-      ? `<div class="st-clubs">${club(BVB)}<span class="st-stay">bleibt</span></div>`
-      : `<div class="st-clubs">${club(it.from)}<span class="st-route"><span class="tc-arrow" aria-hidden="true"></span>${fee ? `<em>${esc(fee)}</em>` : ''}</span>${club(it.to)}</div>`;
-    // Kopfzeile wie bei Instagram: Quelle + wann (der Status steht schon groß auf dem Sticker)
+      ? `<div class="st-clubs st-glass">${club(BVB)}<span class="st-stay">bleibt</span></div>`
+      : `<div class="st-clubs st-glass">${club(it.from)}<span class="st-route"><span class="tc-arrow" aria-hidden="true"></span>${fee ? `<em>${esc(fee)}</em>` : ''}</span>${club(it.to)}</div>`;
+    // Kopfzeile wie bei Instagram: Quelle + wann
     const tier = it.status === 'denied' ? 3 : it.tier === 1 ? 1 : 2;
     const when = it.at ? rel(it.at) : it.date ? fmtDate(it.date) : '';
     const el = $('#story');
-    el.classList.toggle('hwg', !!big);
+    el.classList.remove('hwg');
     el.innerHTML = `<div class="st-bars">${ST.items.map((_, j) => `<span class="st-bar ${j < ST.i ? 'done' : j === ST.i ? 'on' : ''}"><i></i></span>`).join('')}</div>
-      <div class="st-head"><span class="st-src"><span class="st-src-av t${tier}">${esc(initials(it.source || 'Q'))}</span><span class="st-src-t"><b class="ellipsis">${esc(it.source || 'Quelle')}</b><span>${esc(st.label)}${when ? ' · ' + esc(when) : ''}</span></span></span>
+      <div class="st-head"><span class="st-src"><span class="st-src-av t${tier}">${esc(initials(it.source || 'Q'))}</span><span class="st-src-t"><b class="ellipsis">${esc(it.source || 'Quelle')}</b><span>${when ? esc(when) : esc(st.label)}</span></span></span>
         <button type="button" class="st-close" data-action="story-close" aria-label="Story schließen">${I.x}</button></div>
       <section class="st-slide ps ${tone}">
-        ${it.img && !big ? img(it.img, 'st-bg', '', '', 'aria-hidden="true"') : ''}
-        <div class="st-words" aria-hidden="true"><div>${word}</div><div>${word}</div><div>${word}</div></div>
-        <div class="st-hero"><div class="st-card">
-          <div class="st-pw">${it.img ? img(it.img, 'st-photo', it.name, initials(it.name)) : `<span class="st-photo st-nophoto">${big ? SIL : SIL_SOFT}</span>`}</div>
-          ${it.number ? `<span class="st-num">#${esc(it.number)}</span>` : ''}
-          <div class="st-sticker" aria-hidden="true">${sticker}</div>
-        </div></div>
+        ${it.img ? img(it.img, 'st-bg', '', '', 'aria-hidden="true"') : ''}
+        <div class="st-glow" aria-hidden="true"></div>
+        <div class="st-hero">${it.img ? img(it.img, 'st-photo', it.name, initials(it.name)) : `<span class="st-photo st-nophoto">${SIL_SOFT}</span>`}
+          ${it.number ? `<span class="st-num">${esc(it.number)}</span>` : ''}</div>
         <div class="st-sheet">
+          <span class="st-pill">${pill}</span>
+          <div><h2 class="st-title">${esc(it.name)}</h2><div class="st-meta">${esc(metaOf(it))}</div></div>
           ${clubs}
-          <div><h2 class="st-name">${esc(it.name)}</h2><div class="tc-meta">${esc(metaOf(it))}</div></div>
-          <div class="tc-stats">${statsTriple(it)}</div>
+          <div class="st-tiles">${statsTriple(it)}</div>
           ${it.summary ? `<p class="st-sum">${esc(it.summary)}</p>` : ''}
-          <div class="st-foot">${ampel(it)}${it.playerId && it.team ? `<a class="st-cta press" href="#/spieler/${it.team}/${it.playerId}" data-action="story-close">Profil ansehen ›</a>` : ''}</div>
+          <div class="st-foot">${ampel(it)}${it.playerId && it.team ? `<a class="st-cta press" href="#/spieler/${it.team}/${it.playerId}" data-action="story-close">Profil ansehen</a>` : ''}</div>
         </div>
       </section>
       <button type="button" class="st-tap prev" data-action="story-prev" aria-label="Vorherige Story" style="background:none;border:0"></button>
