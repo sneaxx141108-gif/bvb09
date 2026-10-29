@@ -73,7 +73,7 @@ h1, h2, h3, p { margin: 0; }
 /* ---------------------------------------------------------------- Start */
 /* Ladebildschirm: komplett schwarz, nur eine weiß leuchtende Prozentzahl in der Mitte */
 #splash { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; background: #000; transition: opacity .45s ease; }
-.sp-pct { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter Tight', system-ui, sans-serif; font-weight: 200; font-size: 64px; line-height: 1; letter-spacing: -1px; color: #fff; font-variant-numeric: tabular-nums; text-shadow: 0 0 10px rgba(255, 255, 255, .9), 0 0 28px rgba(255, 255, 255, .55), 0 0 64px rgba(255, 255, 255, .3); animation: spGlow 2.4s ease-in-out infinite; }
+.sp-pct { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter Tight', system-ui, sans-serif; font-weight: 800; font-size: 68px; line-height: 1; letter-spacing: -1px; color: #fff; font-variant-numeric: tabular-nums; text-shadow: 0 0 10px rgba(255, 255, 255, .9), 0 0 28px rgba(255, 255, 255, .55), 0 0 64px rgba(255, 255, 255, .3); animation: spGlow 2.4s ease-in-out infinite; }
 #splash.out { opacity: 0; }
 #splash.gone { display: none; }
 @keyframes spGlow { 50% { text-shadow: 0 0 14px rgba(255, 255, 255, 1), 0 0 38px rgba(255, 255, 255, .7), 0 0 84px rgba(255, 255, 255, .38); } }

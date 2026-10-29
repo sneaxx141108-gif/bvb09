@@ -1,5 +1,5 @@
 /* BVB 09 – Service Worker: App offline verfuegbar, Daten immer frisch */
-const SHELL = 'bvb09-shell-v24';
+const SHELL = 'bvb09-shell-v25';
 const IMG = 'bvb09-img-v1';
 const FILES = ['./', 'index.html', 'app.css', 'app.js', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 
