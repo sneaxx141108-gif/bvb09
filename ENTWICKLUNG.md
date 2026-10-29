@@ -79,6 +79,10 @@ erledigte abhaken, danach committen und pushen (siehe `CLAUDE.md`).
       Hintergrund-Lichter (`.sky`, `.ambient`, Rausch-Textur) als feste Ebenen entfernt → Licht jetzt im `body`-Hintergrund,
       Flutlicht-Strahlen der Spiel-Karte ohne `filter: blur`, Überschriften ohne Filter, Wappen ohne Schatten-Filter.
 
+- [x] KI-Update-Zentrale zeigt, wie viele Prognose-Werte sich beim letzten Update geändert haben (neuer Bereich „Prognose“,
+      Protokoll mit den wichtigsten, BVB zuerst; Kachel unter „Mehr“; Saison-Tab „N Werte geändert“). Dabei gefunden und behoben:
+      Würfel-Rauschen im Rechner (eine Quote +0,2 % → 44 Werte sprangen bis 7 Punkte) → fester Zufall, 300 Szenarien.
+
 ## Plan bis 10.11.2026 (mit Niklas am 29.10. abgestimmt) – „App deutlich verbessern“
 
 Die drei BVB-Spiele sind Live-Tests (Niklas nutzt die App beim Spiel und meldet, was hakt):

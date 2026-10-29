@@ -69,6 +69,11 @@ Repository klonen, in Claude Code öffnen, loslegen – alles Wichtige steht unt
 - Daten: jedes Spiel aus 12 Ligen von football-data (Tore mit xG gemischt, Wettquoten doppelt), BL/CL-Ergebnisse von ESPN,
   Vorsaison, ESPN-Quoten der CL; Tabellen der Ligen ohne football-data (AUT, NOR, DEN, SWE) und Vorsaison-Tabellen
   als „Team gegen Liga-Durchschnitt“ (`L:<liga>`); alle Europa-/Conference-League-Spiele als Brücke zwischen den Ligen.
+- **Fester Zufall** (29.10.2026): 300 Szenarien, Form je Team fest pro Szenario, eigener Würfel je Simulation. Vorher verschob eine
+  Quote +0,2 % alle Würfe (44 von 212 Werten sprangen 1–7 Punkte), jetzt 0 (max. 0,1). Nicht auf einen gemeinsamen Würfel zurückbauen.
+- **Prognose-Änderungen** zählt `forecast_changes` (update.py) bei jeder Neuberechnung: jeder Wert, der sich um ≥ 1 Punkt bewegt
+  (Meister, CL-Platz, Relegation, Abstieg, CL-Titel/-Achtelfinale, Pokalsieg, Siegchancen nächste Spiele) + geänderter KI-Tipp →
+  Bereich „Prognose“ in der KI-Update-Zentrale (Kachel unter „Mehr“, Protokoll) und `season.fcChanged` im Saison-Tab.
 - Unsicherheit der Stärken über Szenarien (`SIGMA` = 0,12), 15.000 Simulationen. Nachgemessen (28.10.2026, Saison 25/26,
   11 Ligen): die Markt-Stärke eines Teams schwankt Okt.→Mai nur um ~0,07 je Team – 0,12 ist also eher vorsichtig.
   Nicht künstlich erhöhen, um „schönere“ Zahlen zu bekommen.

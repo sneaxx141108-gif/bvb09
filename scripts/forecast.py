@@ -24,7 +24,10 @@ W_LEAGUE_PREV = 0.25    # Vorsaison-Tabelle der heimischen Liga (schon gealtert 
 W_MARKET = 2.0          # eine Quote zaehlt wie zwei Ergebnisse (sie fasst viel mehr Wissen zusammen)
 TAU = 4.0               # Zug zur Mitte: verhindert Ausreisser bei wenigen Spielen
 SIGMA = 0.12            # Unsicherheit der Staerke je Team (Form, Verletzungen, Trainerwechsel) - gegen zu sichere Prognosen
-SCENARIOS = 40          # so viele Staerke-Szenarien, in jedem viele Saisonverlaeufe
+SCENARIOS = 300         # so viele Staerke-Szenarien, in jedem viele Saisonverlaeufe
+# Fester Zufall: jedes Szenario wuerfelt die Form je Team mit eigenem Startwert, jede Simulation hat ihren eigenen Wuerfel.
+# So verschiebt eine winzige Aenderung (z. B. eine Quote) nicht alle anderen Wuerfe - die Prognose aendert sich nur, wenn sich
+# wirklich etwas tut (vorher: eine Quote +0,2 % -> 44 Werte sprangen um 1 bis 7 Punkte). Gemessen 29.10.2026.
 CL_ROUNDS = ['knockout-round-playoffs', 'round-of-16', 'quarterfinals', 'semifinals', 'final']
 PO_PAIRS = [((9, 10), (23, 24)), ((11, 12), (21, 22)), ((13, 14), (19, 20)), ((15, 16), (17, 18))]
 R16_PAIRS = [((1, 2), (15, 16)), ((3, 4), (13, 14)), ((5, 6), (11, 12)), ((7, 8), (9, 10))]
@@ -330,11 +333,11 @@ def lam_for(e, model, market):
 
 
 class Scenario:
-    """Ein Staerke-Szenario: Modell + Quoten, jedes Team mit zufaelliger Formabweichung."""
+    """Ein Staerke-Szenario: Modell + Quoten, jedes Team mit zufaelliger Formabweichung (fest je Szenario-Schluessel und Team)."""
 
-    def __init__(self, model, market, rng, teams, sigma=SIGMA):
+    def __init__(self, model, market, key, teams, sigma=SIGMA):
         self.model, self.market = model, market
-        self.delta = {t: rng.gauss(0.0, sigma) for t in teams}
+        self.delta = {t: random.Random('%s|%s' % (key, t)).gauss(0.0, sigma) for t in teams}
 
     def lam(self, home, away, ev=None, neutral=False):
         mk = self.market.get(ev['id']) if ev else None
@@ -379,11 +382,10 @@ def bl_forecast(events, model, market, sims=15000, seed=11, focus=None):
             rem.append((i, j, e))
     if not rem:
         sims = 1
-    rng = random.Random(seed + len(rem))
     counts = [[0] * n for _ in ids]
     exp_pts = [0.0] * n
     width = MAXG + 1
-    scen = max(1, min(SCENARIOS, sims // 200))
+    scen = max(1, min(SCENARIOS, sims // 50))
     per = max(1, sims // scen)
     sims = scen * per
     mats = []
@@ -391,8 +393,9 @@ def bl_forecast(events, model, market, sims=15000, seed=11, focus=None):
     wi = {o: [[0, 0] for _ in ids] for o in 'HDA'}  # je Ausgang: [Meister, Platz 1-4]
     wn = dict.fromkeys('HDA', 0)
     for s_ in range(sims):
+        rng = random.Random(seed * 1000003 + s_)  # eigener Wuerfel je Simulation (siehe SCENARIOS)
         if s_ % per == 0:
-            sc = Scenario(model, market, rng, ids)
+            sc = Scenario(model, market, '%d|%d' % (seed, s_ // per), ids)
             mats = [(i, j, cum_matrix(*sc.lam(e['home']['id'], e['away']['id'], e, e.get('neutral', False)))) for i, j, e in rem]
         pts = [r[0] for r in base]
         gd = [r[1] for r in base]
@@ -482,13 +485,13 @@ def dfb_forecast(events, model, market, sims=15000, seed=5):
     ids = sorted(teams)
     later = DFB_ROUNDS[cur + 1:] + ['win']
     reach = {k: dict.fromkeys(ids, 0) for k in later}
-    rng = random.Random(seed + sum(1 for e in events if e['done']))
-    scen = max(1, min(SCENARIOS, sims // 200))
+    scen = max(1, min(SCENARIOS, sims // 50))
     per = max(1, sims // scen)
     sims = scen * per
     for s_ in range(sims):
+        rng = random.Random(seed * 1000003 + s_)  # eigener Wuerfel je Simulation (siehe SCENARIOS)
         if s_ % per == 0:
-            sc = Scenario(model, market, rng, ids)
+            sc = Scenario(model, market, '%d|%d' % (seed, s_ // per), ids)
         alive = []
         for e in games:
             h, a = e['home']['id'], e['away']['id']
@@ -648,18 +651,18 @@ def cl_forecast(events, model, market, official_order=None, sims=15000, seed=7):
         for k in d:
             d[k].sort(key=lambda e: (e.get('leg') or 0, e['date'] or ''))
         ko[r] = d
-    rng = random.Random(seed + len(rem) + sum(1 for e in events if e['done']))
     counts = [[0] * n for _ in ids]
     exp_pts = [0.0] * n
     reach = {k: [0] * n for k in ('top8', 'top24', 'r16', 'qf', 'sf', 'final', 'win')}
     width = MAXG + 1
-    scen = max(1, min(SCENARIOS, sims // 200))
+    scen = max(1, min(SCENARIOS, sims // 50))
     per = max(1, sims // scen)
     sims = scen * per
     mats = []
     for s_ in range(sims):
+        rng = random.Random(seed * 1000003 + s_)  # eigener Wuerfel je Simulation (siehe SCENARIOS)
         if s_ % per == 0:
-            sc = Scenario(model, market, rng, ids)
+            sc = Scenario(model, market, '%d|%d' % (seed, s_ // per), ids)
             mats = [(i, j, cum_matrix(*sc.lam(e['home']['id'], e['away']['id'], e, e.get('neutral', False)))) for i, j, e in rem]
         if fixed:
             order = fixed

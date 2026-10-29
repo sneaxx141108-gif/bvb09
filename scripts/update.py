@@ -1661,6 +1661,51 @@ def build_forecasts(state):
     return out
 
 
+def _pct(v):
+    return ('%.1f' % v).rstrip('0').rstrip('.').replace('.', ',') + ' %'
+
+
+FC_LIST = 8  # so viele Prognose-Aenderungen stehen einzeln im Protokoll der Update-Zentrale, der Rest als Summe
+
+
+def forecast_changes(prev, out, changes):
+    """Vergleicht die neue Prognose mit der letzten Rechnung: jeder Wert, der sich um mindestens 1 Prozentpunkt bewegt hat
+    (Meister, CL-Platz, Relegation, Abstieg, CL-Titel, CL-Achtelfinale, Pokalsieg, Siegchancen der naechsten BVB-Spiele),
+    zaehlt als Aenderung - sichtbar in der Update-Zentrale (Bereich "Prognose") und im Saison-Tab."""
+    if not prev or prev.get('season') != out.get('season'):
+        return 0
+    found = []  # (BVB?, Abstand, Text)
+
+    def cmp(old_teams, new_teams, fields):
+        old = {t.get('espnId'): t for t in old_teams or [] if t.get('espnId')}
+        for t in new_teams or []:
+            o = old.get(t.get('espnId'))
+            if not o:
+                continue
+            name = 'BVB' if t.get('isBVB') else (t.get('short') or t.get('team') or t.get('name'))
+            for key, label in fields:
+                a, b = o.get(key), t.get(key)
+                if a is None or b is None or abs(b - a) < 1:
+                    continue
+                found.append((bool(t.get('isBVB')), abs(b - a), '%s %s: %s → %s' % (label, name, _pct(a), _pct(b))))
+
+    cmp((prev.get('forecast') or {}).get('teams'), (out.get('forecast') or {}).get('teams'),
+        (('title', 'Meister-Chance'), ('cl', 'Champions-League-Platz'), ('rel', 'Relegation'), ('down', 'Abstieg')))
+    cmp((prev.get('cl') or {}).get('teams'), (out.get('cl') or {}).get('teams'), (('win', 'CL-Titel'), ('r16', 'CL-Achtelfinale')))
+    cmp((prev.get('dfb') or {}).get('teams'), (out.get('dfb') or {}).get('teams'), (('win', 'Pokalsieg'),))
+    old_next = {g['id']: g for g in prev.get('next') or []}
+    for g in out.get('next') or []:
+        o = old_next.get(g['id'])
+        if o and max(abs(g[k] - o[k]) for k in ('win', 'draw', 'loss')) >= 1:
+            found.append((True, abs(g['win'] - o['win']), 'Siegchance gegen %s: %s → %s' % (g['opp'], _pct(o['win']), _pct(g['win']))))
+    found.sort(key=lambda x: (not x[0], -x[1]))
+    for _, _, text in found[:FC_LIST]:
+        changes.add('forecast', text)
+    if len(found) > FC_LIST:
+        changes.add('forecast', '… und %d weitere Prognose-Werte' % (len(found) - FC_LIST), count=len(found) - FC_LIST)
+    return len(found)
+
+
 def mod_season(state):
     """Fieberkurve (mit Vorsaison), Saison-Prognose, Liga-Torjaeger und Basis-Tabelle fuer die Live-Konferenz."""
     cur = oldb('/getmatchdata/bl1/%d' % SEASON)
@@ -1710,11 +1755,7 @@ def mod_season(state):
         md = min(open_mds) if open_mds else max(md_of(m) for m in cur)
     out['konferenz'] = {'matchday': md, 'base': [{k: r[k] for k in ('id', 'team', 'short', 'icon', 'played', 'won', 'draw', 'lost', 'goals', 'against', 'points')}
                                                  for r in bl_standings(cur, before=md)]}
-    prev = load('season.json', {}) or {}
-    old_title = ((next((t for t in ((prev.get('forecast') or {}).get('teams') or []) if t.get('isBVB')), None)) or {}).get('title')
-    new_t = next((t for t in ((out.get('forecast') or {}).get('teams') or []) if t.get('isBVB')), None)
-    if new_t and old_title is not None and abs(new_t['title'] - old_title) >= 5:
-        state['changes'].add('table', 'Meister-Chance BVB: %s %% → %s %%' % (str(old_title).replace('.', ','), str(new_t['title']).replace('.', ',')))
+    out['fcChanged'] = forecast_changes(load('season.json', {}) or {}, out, state['changes'])
     save('season.json', out)
     return {'ok': True, 'count': len(out['fever']['cur']), 'warning': '; '.join(errors) or None}
 
@@ -2206,8 +2247,14 @@ def mod_matchcenter(state):
             o['at'] = iso(NOW)
             e['opponent'] = o
             # KI-Tipp aus dem Modell - bis zum Anpfiff bei jedem Lauf neu (neue Quoten, neue Ergebnisse), danach eingefroren
+            old_tip = (e.get('model') or {}).get('tip')
             mt = model_tip(state, e)
             if mt:
+                if old_tip and old_tip != mt['tip']:
+                    hn, an = (m.get('home') or {}), (m.get('away') or {})
+                    sc = lambda t: '%d:%d' % ((t['bvb'], t['opp']) if m.get('isHome') else (t['opp'], t['bvb']))  # noqa: E731
+                    state['changes'].add('forecast', 'KI-Tipp %s – %s: %s → %s' % (hn.get('short') or hn.get('name'), an.get('short') or an.get('name'),
+                                                                                  sc(old_tip), sc(mt['tip'])))
                 e['model'] = mt
         # Wetter zum Anpfiff (bis 10 Tage vorher)
         if not m.get('finished') and NOW < ko < NOW + timedelta(days=10):

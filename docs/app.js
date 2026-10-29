@@ -1280,12 +1280,12 @@
       ['#/mehr/info', I.infoC, 'Über die App', 'Quellen & Hinweise'],
     ];
     return pageHead('Me<em>hr</em>', 'Alles rund um den BVB') + `<div class="tiles stagger">
-      <a class="mtile y stripes" href="#/mehr/update"><span class="mi" style="position:relative">${I.ai}</span><b style="position:relative">KI-Update-Zentrale</b><span style="position:relative">${st.lastRun ? `Letztes Update ${esc(rel(st.lastRun))} · ${st.changes ? st.changes.total : 0} Änderungen` : 'Wann Gemini zuletzt aktualisiert hat'}</span></a>
+      <a class="mtile y stripes" href="#/mehr/update"><span class="mi" style="position:relative">${I.ai}</span><b style="position:relative">KI-Update-Zentrale</b><span style="position:relative">${st.lastRun ? `Letztes Update ${esc(rel(st.lastRun))} · ${st.changes ? st.changes.total : 0} Änderungen${((st.changes || {}).byCategory || {}).forecast ? `, davon ${st.changes.byCategory.forecast} bei der Prognose` : ''}` : 'Wann Gemini zuletzt aktualisiert hat'}</span></a>
       ${items.map(([h, ic, t, s]) => `<a class="mtile" href="${h}"><span class="mi">${ic}</span><b>${t}</b><span>${esc(s)}</span></a>`).join('')}
     </div>`;
   }
-  const CAT = { values: 'Werte', transfers: 'Transfers', stories: 'Storys', rumors: 'Gerüchte', news: 'News', injuries: 'Verletz.', matches: 'Spiele', table: 'Tabelle', stats: 'Statistik', squad: 'Kader' };
-  const CAT_COLOR = { values: '#FDE100', transfers: '#3BD67F', stories: '#3BD67F', rumors: '#FFB020', news: '#5AA9FF', injuries: '#FF5A4E', matches: '#F6F5EE', table: '#F6F5EE', stats: '#A3A39A', squad: '#FDE100' };
+  const CAT = { forecast: 'Prognose', transfers: 'Transfers', stories: 'Storys', rumors: 'Gerüchte', news: 'News', injuries: 'Verletz.', matches: 'Spiele', table: 'Tabelle', stats: 'Statistik', squad: 'Kader' };
+  const CAT_COLOR = { forecast: '#FDE100', values: '#FDE100', transfers: '#3BD67F', stories: '#3BD67F', rumors: '#FFB020', news: '#5AA9FF', injuries: '#FF5A4E', matches: '#F6F5EE', table: '#F6F5EE', stats: '#A3A39A', squad: '#FDE100' };
   function berlinToDate(ymd, hm) {
     const [y, mo, d] = ymd.split('-').map(Number);
     const [h, mi] = hm.split(':').map(Number);
@@ -2018,7 +2018,7 @@
   function vSaisonTab() {
     const se = D.season || {};
     if (!se.fever && !se.forecast) return '<div class="empty" style="margin-top:14px">Die Saison-Analyse kommt mit dem nächsten Update.</div>';
-    let out = `<div class="row faint" style="font-size:12px;margin:14px 2px 0;gap:8px;font-weight:600"><span class="dot ${liveDotClass()}"></span><span>Neu gerechnet ${esc(rel(se.updatedAt) || '–')} · nach jedem Bundesliga-, CL- und Pokalspiel automatisch</span></div>`;
+    let out = `<div class="row faint" style="font-size:12px;margin:14px 2px 0;gap:8px;font-weight:600"><span class="dot ${liveDotClass()}"></span><span>Neu gerechnet ${esc(rel(se.updatedAt) || '–')}${se.fcChanged != null ? ` · ${se.fcChanged ? `${se.fcChanged} ${se.fcChanged === 1 ? 'Wert' : 'Werte'} geändert` : 'nichts geändert'}` : ''} · nach jedem Bundesliga-, CL- und Pokalspiel automatisch</span></div>`;
     const cur = (se.fever || {}).cur || [];
     const prev = (se.fever || {}).prev || [];
     const last = cur[cur.length - 1];
