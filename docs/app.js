@@ -1988,7 +1988,8 @@
       <li><b>Ligen vergleichen:</b> über alle Spiele in Champions League, Europa League und Conference League.</li>
       <li><b>Simulation:</b> Die restliche Saison wird ${nf0.format(info.sims || 15000)}-mal durchgespielt – mit Heimvorteil, Zufall und Formschwankungen.</li>
       <li><b>Punkte oder Stärke?</b> Gleich viele Punkte heißt nicht gleich stark. Wer seine Spiele knapp gewinnt, holt später im Schnitt weniger als ein Team, das klar gewinnt – deshalb zählt die Stärke mehr als der Tabellenplatz von heute.</li>
-      <li><b>Nachgemessen:</b> An allen Spielen der letzten Saison aus 11 Ligen geprüft – die Stärke eines Teams schwankt über eine Saison weniger, als die Prognose vorsichtshalber einrechnet.</li>
+      <li><b>Nachgemessen:</b> Die Einstellungen sind an der kompletten letzten Saison getestet – Woche für Woche nur mit dem Wissen bis dahin, 531 Europapokal- und 164 Bundesliga-Spiele vorhergesagt. Am besten traf: Europapokal-Spiele zählen dreifach, die Vorsaison stark.</li>
+      <li><b>Titel-Chance ≠ Stärke allein:</b> Auch der Weg zählt – Platz in der Ligaphase, mögliche Gegner im Turnierbaum, Hin- und Rückspiel.</li>
       <li>Ganz ohne KI, nach jedem Bundesliga-, Champions-League- und Pokalspiel neu. Eine Schätzung, keine Garantie.</li></ul></details>`;
   }
   function vSaisonTab() {

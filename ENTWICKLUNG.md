@@ -53,7 +53,8 @@ erledigte abhaken, danach committen und pushen (siehe `CLAUDE.md`).
 - [x] **Titelrennen (Spiele → Saison):** jeden Verein mit dem BVB vergleichen können (wie jetzt Bayern), Gegner wählbar.
       **„Was wäre wenn“ komplett entfernen.**
 - [x] **Alles im Saison-Tab** muss sich nach jedem Spiel aktualisieren (z. B. Prognose-Tabelle) – alles prüfen.
-- [ ] **Prognose-System upgraden (CL + alle Teams):** nicht nur PSG (Platz 5 bei den Titel-Favoriten), sondern alle
+- [x] **Prognose-System upgraden (CL + alle Teams):** Backtest 25/26 → Europapokal x3, Vorsaison 1,2 (Log-Loss 0,9907 → 0,9755);
+      PSG jetzt 4. statt 5. (11,5 %), Arsenal vorne (23 %). nicht nur PSG (Platz 5 bei den Titel-Favoriten), sondern alle
       Teams prüfen, das Modell verbessern und sicherstellen, dass die automatische Berechnung nach jedem Spiel genauso
       gut läuft wie bei einer Prüfung von Hand. Hinweis: Prognosen rechnet Code (forecast.py), nicht die KI.
 - [x] **Ladebildschirm:** komplett schwarz, in der Mitte nur eine weiße, leuchtende Prozentzahl (Glow) –

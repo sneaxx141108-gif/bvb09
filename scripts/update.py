@@ -1438,7 +1438,9 @@ def build_model(state):
     # im Modell (sonst zaehlten Spiele doppelt); ESPN-Quoten bleiben fuer die CL und fuer die Simulation.
     fd = football_data(now_ts)
     bl_fd = 'ger.1' in fd['leagues']
-    obs = fcst.obs_from(([] if bl_fd else events['bl']) + events['cl'], now_ts, 1.0, ts) + fcst.obs_from(prev_bl + prev_cl, now_ts, fcst.W_PREV, ts)
+    # Gewichte per Backtest an der kompletten Saison 25/26 bestimmt (Europapokal x3, Vorsaison 1,2)
+    obs = fcst.obs_from([] if bl_fd else events['bl'], now_ts, 1.0, ts) + fcst.obs_from(events['cl'], now_ts, fcst.W_EURO, ts)
+    obs += fcst.obs_from(prev_bl, now_ts, fcst.W_PREV, ts) + fcst.obs_from(prev_cl, now_ts, fcst.W_PREV * fcst.W_EURO, ts)
     obs += fd['obs']
     for mk in market.values():
         if mk['c'] == 'cl' or (mk['c'] == 'bl' and not bl_fd):
@@ -1461,7 +1463,7 @@ def build_model(state):
             eu += espn_season(lg, SEASON)
         except Exception as e:
             log('  %s: %s' % (lg, e))
-    obs += fcst.obs_from(eu, now_ts, 1.0, ts) + fcst.obs_from(uncompact(store['prev'].get('eu') or []), now_ts, fcst.W_PREV, ts)
+    obs += fcst.obs_from(eu, now_ts, fcst.W_EURO, ts) + fcst.obs_from(uncompact(store['prev'].get('eu') or []), now_ts, fcst.W_PREV * fcst.W_EURO, ts)
     # laufende Tabellen nur fuer Ligen ohne football-data (dort gibt es jedes Spiel einzeln)
     obs += league_obs(domestic_tables(leagues=[lg for lg in DOMESTIC if lg not in fd['leagues']]), 1.0)
     obs += league_obs(store['prev']['leagues'], fcst.W_LEAGUE_PREV)

@@ -18,7 +18,8 @@ import random
 MAXG = 10               # Tore je Team, die das Modell betrachtet (mehr kommt praktisch nie vor)
 DC_RHO = -0.07          # Dixon-Coles: etwas mehr 0:0/1:1, etwas weniger 1:0/0:1 als reines Poisson
 HALF_LIFE = 180.0       # Tage: so schnell verliert ein Ergebnis an Gewicht
-W_PREV = 0.5            # Vorsaison zaehlt halb
+W_PREV = 1.2            # Vorsaison (vor dem Zeitabschlag) - im Backtest 25/26 am treffsichersten (vorher 0,5)
+W_EURO = 3.0            # CL-, EL- und ECL-Spiele zaehlen dreifach: sie verbinden die Ligen und zeigen die Top-Elf
 W_LEAGUE_PREV = 0.25    # Vorsaison-Tabelle der heimischen Liga (schon gealtert - zaehlt ein Viertel)
 W_MARKET = 2.0          # eine Quote zaehlt wie zwei Ergebnisse (sie fasst viel mehr Wissen zusammen)
 TAU = 4.0               # Zug zur Mitte: verhindert Ausreisser bei wenigen Spielen

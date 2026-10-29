@@ -63,8 +63,11 @@ Repository klonen, in Claude Code öffnen, loslegen – alles Wichtige steht unt
 
 ### Prognose-Modell (`forecast.py`)
 - Poisson-Modell (Angriff/Abwehr je Team, Heimvorteil), Dixon-Coles-Korrektur, Zug zur Mitte (`TAU`).
+- Gewichte per Backtest bestimmt (29.10.2026, Saison 25/26 Woche für Woche nachgerechnet, 531 Europapokal- + 164 BL-Spiele,
+  Log-Loss 0,9907 → 0,9755): Europapokal-Spiele (CL/EL/ECL) `W_EURO` = 3, Vorsaison `W_PREV` = 1,2, Quoten 2, Halbwertszeit
+  180 Tage. Änderungen an Gewichten nur nach erneutem Backtest.
 - Daten: jedes Spiel aus 12 Ligen von football-data (Tore mit xG gemischt, Wettquoten doppelt), BL/CL-Ergebnisse von ESPN,
-  Vorsaison halb, ESPN-Quoten der CL; Tabellen der Ligen ohne football-data (AUT, NOR, DEN, SWE) und Vorsaison-Tabellen
+  Vorsaison, ESPN-Quoten der CL; Tabellen der Ligen ohne football-data (AUT, NOR, DEN, SWE) und Vorsaison-Tabellen
   als „Team gegen Liga-Durchschnitt“ (`L:<liga>`); alle Europa-/Conference-League-Spiele als Brücke zwischen den Ligen.
 - Unsicherheit der Stärken über Szenarien (`SIGMA` = 0,12), 15.000 Simulationen. Nachgemessen (28.10.2026, Saison 25/26,
   11 Ligen): die Markt-Stärke eines Teams schwankt Okt.→Mai nur um ~0,07 je Team – 0,12 ist also eher vorsichtig.
