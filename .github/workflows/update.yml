@@ -14,6 +14,7 @@ on:
     - cron: '17 18 * * *'
     - cron: '17 19 * * *'
     - cron: '47 * * * *'
+    - cron: '17 * * * *'  # zweiter Spiel-Check: nach jedem Spiel spaetestens nach ~30 Minuten neu gerechnet
   workflow_dispatch:
   push:
     branches: [main]

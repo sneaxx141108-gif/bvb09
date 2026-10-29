@@ -1886,38 +1886,37 @@
       <span class="tie-p"><b>${esc(pctTxt(t.p))}</b><span>${fin ? 'Titel' : 'weiter'}</span></span></div><div class="tie-legs">${legs}</div></div>`;
   }
   const pctS = (v) => (v == null ? '–' : v >= 99.95 ? '100' : v > 0 && v < 0.5 ? '<1' : nf0.format(v));
-  // Titelrennen: BVB gegen den stärksten Konkurrenten – mit Erklärung, warum die Chancen so verteilt sind
+  // Titelrennen: BVB gegen einen frei wählbaren Verein (Standard: der stärkste Konkurrent) – mit Erklärung
   function raceCard(fc, me) {
-    const riv = fc.teams.filter((t) => !t.isBVB).sort((a, b) => (b.title - a.title) || (b.expPoints - a.expPoints))[0];
+    const others = fc.teams.filter((t) => !t.isBVB);
+    const top = [...others].sort((a, b) => (b.title - a.title) || (b.expPoints - a.expPoints))[0];
+    const riv = others.find((t) => t.espnId === UI.raceRival) || top;
     if (!riv || me.ppg == null || riv.ppg == null) return '';
     const nm = (t) => esc(t.isBVB ? 'der BVB' : (t.short || t.team));
+    const rank = (t) => fc.teams.indexOf(t) + 1;
     const dp = me.points - riv.points;
-    const fav = riv.title > me.title ? riv : me;
-    const und = fav === riv ? me : riv;
-    const gap = Math.round(Math.abs(fav.expPoints - und.expPoints));
+    const ahead = me.expPoints >= riv.expPoints ? me : riv;
+    const behind = ahead === me ? riv : me;
+    const gap = Math.round(Math.abs(me.expPoints - riv.expPoints));
     const stand = dp === 0 ? 'Gleich viele Punkte' : dp > 0 ? `${dp} ${dp === 1 ? 'Punkt' : 'Punkte'} Vorsprung für den BVB` : `${-dp} ${dp === -1 ? 'Punkt' : 'Punkte'} Rückstand für den BVB`;
-    const verdict = fav === riv ? `${dp >= 0 ? 'trotzdem ' : ''}ist ${nm(riv)} ${fav.title >= 60 ? 'klarer ' : ''}Favorit` : `${dp < 0 ? 'trotzdem ' : ''}ist der BVB Favorit`;
-    const goals = (fav.diff - und.diff) >= 6 ? ` Dazu passt das Torverhältnis: ${fav.goals}:${fav.against} gegen ${und.goals}:${und.against}.` : '';
-    const why = `${stand} – ${verdict}. Für die restlichen Spiele trauen Wettquoten und Ergebnisse ${nm(fav)} im Schnitt ${nf2.format(fav.ppg)} Punkte pro Spiel zu, ${nm(und)} ${nf2.format(und.ppg)}. Über ${me.left} Spiele sind das am Saisonende rund ${gap} ${gap === 1 ? 'Punkt' : 'Punkte'} Unterschied.${goals}`;
+    const flip = (dp > 0 && ahead === riv) || (dp < 0 && ahead === me);
+    const verdict = gap < 1 ? 'am Saisonende liegen beide laut Prognose praktisch gleichauf'
+      : `${flip ? 'trotzdem ' : ''}landet am Saisonende laut Prognose ${nm(ahead)} vorne – im Schnitt rund ${gap} ${gap === 1 ? 'Punkt' : 'Punkte'}`;
+    const goals = Math.abs(me.diff - riv.diff) >= 6 ? ` Das Torverhältnis: ${me.goals}:${me.against} beim BVB, ${riv.goals}:${riv.against} bei ${nm(riv)}.` : '';
+    const why = `${stand} – ${verdict}. Für die restlichen Spiele trauen Wettquoten und Ergebnisse dem BVB im Schnitt ${nf2.format(me.ppg)} Punkte pro Spiel zu, ${nm(riv)} ${nf2.format(riv.ppg)}.${goals}`;
+    // direktes Duell aus dem Spielplan des BVB
+    const duel = matchList('profis').filter((m) => m.comp === 'Bundesliga' && slug(oppOf(m).name || '') === slug(riv.team || ''));
+    const duelTxt = duel.map((m) => (m.finished && m.score ? `${m.isHome ? 'Heim' : 'Auswärts'} ${m.isHome ? m.score[0] + ':' + m.score[1] : m.score[1] + ':' + m.score[0]}` : `${m.isHome ? 'Heim' : 'Auswärts'} am ${F.dm.format(new Date(m.date))}`)).join(' · ');
     const rows = [['Punkte', me.points, riv.points, dp], ['Tore', `${me.goals}:${me.against}`, `${riv.goals}:${riv.against}`, me.diff - riv.diff],
       ['Pkt. pro Spiel ab jetzt', nf2.format(me.ppg), nf2.format(riv.ppg), me.ppg - riv.ppg], ['Erwartet am Ende', nf0.format(me.expPoints), nf0.format(riv.expPoints), me.expPoints - riv.expPoints],
-      ['Meister-Chance', pctTxt(me.title), pctTxt(riv.title), me.title - riv.title]];
-    return `<section class="sec"><div class="sec-h"><h2>Titelrennen</h2><span class="note">BVB gegen ${esc(riv.short || riv.team)}</span></div><div class="card">
+      ['Prognose-Platz', rank(me) + '.', rank(riv) + '.', rank(riv) - rank(me)],
+      ['Meister-Chance', pctTxt(me.title), pctTxt(riv.title), me.title - riv.title], ['Top-4-Chance', pctTxt(me.cl), pctTxt(riv.cl), me.cl - riv.cl]];
+    const picker = `<div class="chips race-pick" role="group" aria-label="Verein zum Vergleichen">${others.map((t) => `<button type="button" class="${t === riv ? 'on' : ''}" aria-pressed="${t === riv}" data-action="race" data-val="${esc(t.espnId)}">${crest({ name: t.team, icon: t.icon }, 'crest xs')}${esc(t.short || t.team)}</button>`).join('')}</div>`;
+    return `<section class="sec"><div class="sec-h"><h2>Titelrennen</h2><span class="note">Verein antippen zum Vergleichen</span></div>${picker}<div class="card" style="margin-top:10px">
       <div class="race-head"><span class="rt">${crest({ name: me.team, icon: me.icon }, 'crest sm')}<span class="ellipsis">BVB</span></span><span class="vs">VS</span><span class="rt r"><span class="ellipsis">${esc(riv.short || riv.team)}</span>${crest({ name: riv.team, icon: riv.icon }, 'crest sm')}</span></div>
       ${rows.map(([l, a, b, d]) => `<div class="race-row"><b class="${d > 0 ? 'win' : ''}">${esc(a)}</b><span>${l}</span><b class="r ${d < 0 ? 'win' : ''}">${esc(b)}</b></div>`).join('')}
+      ${duelTxt ? `<div class="kv" style="border-top:1px solid var(--hair)"><span>Direktes Duell</span><span>${esc(duelTxt)}</span></div>` : ''}
       <p class="race-why">${why}</p></div></section>`;
-  }
-  // Was wäre wenn: Meister- und Top-4-Chance des BVB je nach Ausgang des nächsten Bundesliga-Spiels
-  function whatIfCard(wi, me) {
-    const r = wi && wi.teams && wi.p ? wi.teams[me.espnId] : null;
-    if (!r || !wi.home || !wi.away) return '';
-    const bvbHome = !!wi.home.isBVB;
-    const opp = esc((bvbHome ? wi.away : wi.home).team || 'Gegner');
-    const rows = [['win', bvbHome ? 'H' : 'A', 'BVB gewinnt'], ['draw', 'D', 'Unentschieden'], ['loss', bvbHome ? 'A' : 'H', `${opp} gewinnt`]];
-    return `<section class="sec"><div class="sec-h"><h2>Was wäre wenn?</h2><span class="note">${esc(dayLabel(wi.date))}</span></div><div class="card">
-      <div class="wi-match">${crest({ name: wi.home.team, icon: wi.home.icon }, 'crest sm')}<b>${esc(wi.home.team)} – ${esc(wi.away.team)}</b>${crest({ name: wi.away.team, icon: wi.away.icon }, 'crest sm')}</div>
-      ${rows.map(([cls, o, label]) => `<div class="wi-row ${cls}"><span class="wi-l"><b>${label}</b><span>${esc(pctTxt(wi.p[o]))} wahrscheinlich</span></span><span class="wi-v"><b>${esc(pctTxt(r[o][0]))}</b><span>Meister</span></span><span class="wi-v"><b>${esc(pctTxt(r[o][1]))}</b><span>Top 4</span></span></div>`).join('')}
-      <p class="faint" style="font-size:11px;font-weight:600;line-height:1.5;margin-top:8px">So ändern sich die Chancen des BVB je nach Ergebnis – alle anderen Spiele werden weiter simuliert.</p></div></section>`;
   }
   const COMP_LBL = { bl: 'Bundesliga', cl: 'Champions League', dfb: 'DFB-Pokal' };
   function nextGamesCard(list) {
@@ -1995,7 +1994,7 @@
   function vSaisonTab() {
     const se = D.season || {};
     if (!se.fever && !se.forecast) return '<div class="empty" style="margin-top:14px">Die Saison-Analyse kommt mit dem nächsten Update.</div>';
-    let out = '';
+    let out = `<div class="row faint" style="font-size:12px;margin:14px 2px 0;gap:8px;font-weight:600"><span class="dot ${liveDotClass()}"></span><span>Neu gerechnet ${esc(rel(se.updatedAt) || '–')} · nach jedem Bundesliga-, CL- und Pokalspiel automatisch</span></div>`;
     const cur = (se.fever || {}).cur || [];
     const prev = (se.fever || {}).prev || [];
     const last = cur[cur.length - 1];
@@ -2017,7 +2016,6 @@
         <div class="pro-dist" aria-label="Wahrscheinlichkeit je Tabellenplatz">${(me.dist || []).map((v, i) => `<span style="--h:${Math.max(2, Math.min(100, v * 2.2)).toFixed(1)}%" class="${i < 4 ? 'cl' : i >= 15 ? 'down' : ''}" title="Platz ${i + 1}: ${nf1.format(v)} %"><i></i><em>${i + 1}</em></span>`).join('')}</div>
         <p class="faint" style="font-size:11px;font-weight:600;line-height:1.6;margin-top:10px">Wahrscheinlichkeit für jeden Tabellenplatz – berechnet aus ${how}, nach jedem Spiel neu. Eine Schätzung, keine Garantie.</p></div></section>`;
       out += raceCard(fc, me);
-      out += whatIfCard(fc.whatIf, me);
       out += nextGamesCard(se.next || []);
       out += fcTable(fc);
     }
@@ -3144,6 +3142,7 @@
     const act = a.dataset.action;
     if (act === 'team') { UI[a.dataset.key] = a.dataset.val; render({ forceAnim: true, keepScroll: true }); }
     else if (act === 'toggle') { UI[a.dataset.key] = !UI[a.dataset.key]; render({ animate: false, keepScroll: true }); }
+    else if (act === 'race') { UI.raceRival = a.dataset.val; render({ animate: false, keepScroll: true }); }
     else if (act === 'clgroup') { UI.clGroup = a.dataset.val; render({ animate: false, keepScroll: true }); }
     else if (act === 'filter') { UI.newsFilter = a.dataset.val; render({ forceAnim: true, keepScroll: true }); }
     else if (act === 'kfilter') {

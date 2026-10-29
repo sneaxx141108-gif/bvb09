@@ -1550,8 +1550,7 @@ def build_forecasts(state):
     model, market, ev = fc['model'], fc['market'], fc['events']
     tables = load('tables.json', {}) or {}
     out = {}
-    nxt = sorted([e for e in ev['bl'] if not e['done'] and ESPN_BVB in (e['home']['id'], e['away']['id'])], key=lambda e: e['date'] or '')
-    bl = fcst.bl_forecast(ev['bl'], model, market, sims=15000, focus=nxt[0]['id'] if nxt else None)
+    bl = fcst.bl_forecast(ev['bl'], model, market, sims=15000)
     if bl:
         rows = (tables.get('bl1') or {}).get('rows') or []
         for t in bl['teams']:
@@ -1561,12 +1560,6 @@ def build_forecasts(state):
             t['icon'] = (r.get('icon') if r else None) or t.get('logo')
             t['id'] = r['id'] if r else 'espn-' + t['espnId']
             t['isBVB'] = t['espnId'] == ESPN_BVB
-        wi = bl.get('whatIf')
-        if wi:
-            by = {t['espnId']: t for t in bl['teams']}
-            for side in ('home', 'away'):
-                t = by.get(wi[side]) or {}
-                wi[side] = {'espnId': wi[side], 'team': t.get('short') or t.get('team'), 'icon': t.get('icon'), 'isBVB': wi[side] == ESPN_BVB}
         out['bl'] = bl
     # Die naechsten BVB-Spiele (alle Wettbewerbe): Sieg/Remis/Niederlage laut Quoten bzw. Modell
     up = sorted([e for k in ('bl', 'cl', 'dfb') for e in ev[k] if not e['done'] and ESPN_BVB in (e['home']['id'], e['away']['id'])],

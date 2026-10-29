@@ -42,7 +42,7 @@ Repository klonen, in Claude Code öffnen, loslegen – alles Wichtige steht unt
 | `scripts/forecast.py` | Prognose-Rechner: Spielstärken (Ergebnisse, xG, Wettquoten), Bundesliga-, CL- und DFB-Pokal-Simulation, KI-Tipp |
 | `docs/data/cl.json` | alle CL-Spiele der Saison (Ligaphase mit Spieltag, K.-o. mit Hin-/Rückspiel) + Weiterkommen-Chancen; schreibt `season` |
 | `scripts/gate.py` | entscheidet, ob/was ein geplanter Lauf macht |
-| `.github/workflows/update.yml` | 3× täglich (8:17/14:17/20:17 Uhr), an BVB-Spieltagen stündlich, nach jedem BL/CL-Spiel ein kurzer Lauf |
+| `.github/workflows/update.yml` | 3× täglich (8:17/14:17/20:17 Uhr), an BVB-Spieltagen alle 30 Min., nach jedem BL-/CL-/Pokalspiel ein kurzer Lauf (Spiel-Check :17 und :47) |
 
 ### Datenquellen
 - OpenLigaDB: Spiele, Bundesliga-Tabelle, Torjäger (frei, CORS offen – die App holt Live-Tore auch direkt).
@@ -69,8 +69,9 @@ Repository klonen, in Claude Code öffnen, loslegen – alles Wichtige steht unt
 - Unsicherheit der Stärken über Szenarien (`SIGMA` = 0,12), 15.000 Simulationen. Nachgemessen (28.10.2026, Saison 25/26,
   11 Ligen): die Markt-Stärke eines Teams schwankt Okt.→Mai nur um ~0,07 je Team – 0,12 ist also eher vorsichtig.
   Nicht künstlich erhöhen, um „schönere“ Zahlen zu bekommen.
-- Saison-Tab erklärt die Zahlen: Titelrennen (BVB gegen stärksten Rivalen, Punkte pro Spiel ab jetzt), „Was wäre wenn“
-  für das nächste BL-Spiel (`whatIf`), nächste Spiele mit Sieg/Remis/Niederlage, Prognose-Tabelle, CL- und Pokal-Favoriten.
+- Saison-Tab erklärt die Zahlen: Titelrennen (BVB gegen einen frei wählbaren Verein, Standard = stärkster Rivale; Punkte
+  pro Spiel ab jetzt, Prognose-Platz, Top-4, direktes Duell), nächste Spiele mit Sieg/Remis/Niederlage, Prognose-Tabelle,
+  CL- und Pokal-Favoriten. „Was wäre wenn“ hat Niklas am 29.10.2026 abgeschafft – nicht wieder einbauen.
 - DFB-Pokal (`dfb_forecast`): Runden aus ESPN-Slugs, ein Spiel je Runde, freie Auslosung, Amateure (dem Modell unbekannt)
   mit Heimrecht, Finale neutral. Nach jedem BL-, CL- und Pokalspiel neu (`nextEnds` → `gate.py`).
 - CL nach UEFA-Regeln seit 2024/25: Ligaphase (Tiebreaker), Playoffs 9/10–23/24 usw., Achtelfinale gegen Top 8,

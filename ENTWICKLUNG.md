@@ -49,10 +49,10 @@ erledigte abhaken, danach committen und pushen (siehe `CLAUDE.md`).
 
 ## Auftrag für den 29.10.2026 (Niklas) – in dieser Reihenfolge
 
-- [ ] **Zuerst:** Storys → Spielerprofile: Bug bei der Positionierung fixen, danach deutlich schöner machen.
-- [ ] **Titelrennen (Spiele → Saison):** jeden Verein mit dem BVB vergleichen können (wie jetzt Bayern), Gegner wählbar.
+- [x] **Zuerst:** Storys → Spielerprofile: Bug bei der Positionierung fixen, danach deutlich schöner machen.
+- [x] **Titelrennen (Spiele → Saison):** jeden Verein mit dem BVB vergleichen können (wie jetzt Bayern), Gegner wählbar.
       **„Was wäre wenn“ komplett entfernen.**
-- [ ] **Alles im Saison-Tab** muss sich nach jedem Spiel aktualisieren (z. B. Prognose-Tabelle) – alles prüfen.
+- [x] **Alles im Saison-Tab** muss sich nach jedem Spiel aktualisieren (z. B. Prognose-Tabelle) – alles prüfen.
 - [ ] **Prognose-System upgraden (CL + alle Teams):** nicht nur PSG (Platz 5 bei den Titel-Favoriten), sondern alle
       Teams prüfen, das Modell verbessern und sicherstellen, dass die automatische Berechnung nach jedem Spiel genauso
       gut läuft wie bei einer Prüfung von Hand. Hinweis: Prognosen rechnet Code (forecast.py), nicht die KI.
