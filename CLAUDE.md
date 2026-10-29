@@ -109,8 +109,11 @@ Ohne `GEMINI_API_KEY` laufen alle Module außer den KI-Texten. Python nur mit St
   Seitenwechsel **sofort, ohne Animation** (keine View Transitions – gaben schwarzes Ruckeln), keine Einflug-/Zähl-Animationen,
   **keine Dauer-Animationen als Deko** (Lauftexte, Streifen, Schweben, Glanz, Schimmer), Glas-Unschärfe (`backdrop-filter`)
   **nur in Tab-Leiste und Kopfzeile**, keine `filter: blur` auf großen Flächen, kein Licht beim Antippen, kein Einblenden beim
-  Scrollen, langes Tippen ohne iOS-Menü/Textauswahl, Drück-Effekt mit kurzer Verzögerung. Story: kurzes Einblenden, keine
-  Effekte, nächstes Foto vorgeladen. Neue Effekte immer am iPhone prüfen lassen. Sammel-Block am Ende von `app.css`.
+  Scrollen, langes Tippen ohne iOS-Menü/Textauswahl. **Antippen ohne Bewegung**: kein `:active`-Zusammenziehen (`transform`
+  baute am iPhone neue Ebenen → schwarze Flächen/Lichter-Blitzen), stattdessen kurz abdunkeln (`.pressed`, setzt `app.js`).
+  **Tageszeit-Licht im `body`-Hintergrund** (scrollt mit), keine festen Extra-Ebenen hinter dem Inhalt, keine CSS-Filter auf
+  Karten/Wappen. Story: kurzes Einblenden, keine Effekte, nächstes Foto vorgeladen. Neue Effekte immer am iPhone prüfen lassen.
+  Sammel-Block am Ende von `app.css`.
 - App-Updates kommen beim ersten Öffnen an (Service Worker lädt am Cache vorbei, App lädt bei neuer Version einmal neu).
 - Tippspiel: KI-Punkte am 29.10.2026 auf 0 gesetzt (`KI_FROM` in `app.js`) – zählen nur Spiele ab dann.
 - GitHub Pages ist an (Quelle „GitHub Actions“, seit 28.10.2026), die App ist online.

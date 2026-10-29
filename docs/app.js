@@ -3259,6 +3259,31 @@
     if (e.target && e.target.dataset && e.target.dataset.set === 'name') toast(userName() ? `Hallo ${userName()}!` : 'Name entfernt – die App sagt jetzt „Borusse“');
   });
 
+  // Antippen: kurz abdunkeln (.pressed) statt zusammenziehen - erst nach kurzem Halten, damit Scrollen nichts flackern lässt;
+  // ein schneller Tipp blitzt nur kurz auf. Ohne Bewegung baut das iPhone keine neue Ebene (gab schwarze Flächen).
+  (() => {
+    const PRESS = '.press, .chips button, .teams button, .btn, .tile, .ticket, .pc, .mtile, .fav, .set-seg button, .tmk, .wr-mcard, .story, .slot, .tp-step button, .yt, .li, .gear';
+    let el = null;
+    let t = 0;
+    const off = () => { clearTimeout(t); if (el) el.classList.remove('pressed'); el = null; };
+    document.addEventListener('pointerdown', (e) => {
+      off();
+      const hit = e.button > 0 || !e.target.closest ? null : e.target.closest(PRESS);
+      if (!hit) return;
+      el = hit;
+      t = setTimeout(() => hit.classList.add('pressed'), 90);
+    }, { passive: true });
+    document.addEventListener('pointerup', () => {
+      if (!el) return;
+      clearTimeout(t);
+      const hit = el;
+      hit.classList.add('pressed');
+      t = setTimeout(() => { hit.classList.remove('pressed'); if (el === hit) el = null; }, 110);
+    }, { passive: true });
+    document.addEventListener('pointercancel', off, { passive: true });
+    window.addEventListener('scroll', () => { if (el) off(); }, { passive: true });
+  })();
+
   // Sheet: am Griff nach unten ziehen zum Schliessen
   (() => {
     let d = null;

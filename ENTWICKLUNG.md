@@ -75,6 +75,9 @@ erledigte abhaken, danach committen und pushen (siehe `CLAUDE.md`).
       auf der Transfer-Seite, drehende Story-Ringe, Hintergrund-Licht), Balken-Wachsen aus (~70 im Saison-Tab), Zähl-Animationen
       aus, Glas-Unschärfe nur noch Tab-Leiste/Kopfzeile, Story ohne unscharfes Foto, nächstes Story-Foto vorgeladen.
       Updates kommen jetzt beim ersten Öffnen an.
+- [x] Runde 3 („beim Antippen im Hintergrund Lichter oder schwarze Platten“): Antippen ohne `transform` (kurz abdunkeln),
+      Hintergrund-Lichter (`.sky`, `.ambient`, Rausch-Textur) als feste Ebenen entfernt → Licht jetzt im `body`-Hintergrund,
+      Flutlicht-Strahlen der Spiel-Karte ohne `filter: blur`, Überschriften ohne Filter, Wappen ohne Schatten-Filter.
 
 ## Plan bis 10.11.2026 (mit Niklas am 29.10. abgestimmt) – „App deutlich verbessern“
 
