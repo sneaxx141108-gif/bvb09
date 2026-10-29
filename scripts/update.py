@@ -686,6 +686,33 @@ def norm_match(m, comp, short):
             'location': (m.get('location') or {}).get('locationCity') if m.get('location') else None}
 
 
+LEADER_LEAGUES = (('bl1', 'ger.1'), ('ucl', 'uefa.champions'))
+
+
+def espn_leaders(lg):
+    """Torschuetzen- und Vorlagenliste (je Top 50) einer Liga von ESPN, zusammengefuehrt: Tore, Vorlagen, Scorer je Spieler.
+    Jeder Eintrag bringt beide Werte mit ("M: 7, G: 8: A: 0") - Scorer ist damit exakt, nichts geschaetzt."""
+    d = http_json('https://site.web.api.espn.com/apis/site/v2/sports/soccer/%s/statistics?season=%d' % (lg, SEASON), timeout=30)
+    out = {}
+    for cat in d.get('stats') or []:
+        for x in cat.get('leaders') or []:
+            a = x.get('athlete') or {}
+            if not a.get('id'):
+                continue
+            txt = x.get('shortDisplayValue') or ''
+            num = lambda k: int(m.group(1)) if (m := re.search(r'(?<![A-Za-z])' + k + r':\s*(\d+)', txt)) else None  # noqa: E731
+            g, ast, gp = num('G'), num('A'), num('M')
+            if g is None or ast is None:
+                continue
+            t = a.get('team') or {}
+            out[a['id']] = {'name': a.get('displayName'), 'team': cl_de(ESPN_ALIAS.get(t.get('displayName') or '', t.get('displayName') or '')),
+                            'logo': 'https://a.espncdn.com/i/teamlogos/soccer/500/%s.png' % t['id'] if t.get('id') else None,
+                            'isBVB': str(t.get('id')) == ESPN_BVB, 'games': gp, 'goals': g, 'assists': ast}
+    if not out:
+        raise RuntimeError('ESPN lieferte keine Ranglisten fuer %s' % lg)
+    return sorted(out.values(), key=lambda r: (-(r['goals'] + r['assists']), -r['goals']))
+
+
 def mod_matches(state):
     prev = load('matches.json', {}) or {}
     leagues = pick_leagues()
@@ -729,6 +756,12 @@ def mod_matches(state):
         except Exception as e:
             state['warnings'].append('Tabelle %s (ESPN): %s' % (name, e))
     match_changes(prev.get('profis') or [], out['profis'], state)
+    # Spieler-Ranglisten (Tore, Vorlagen, Scorer) fuer Bundesliga und Champions League
+    for key, lg in LEADER_LEAGUES:
+        try:
+            tables.setdefault('leaders', {})[key] = {'rows': espn_leaders(lg), 'updatedAt': iso(NOW)}
+        except Exception as e:
+            log('  Ranglisten %s: %s' % (key, e))
     save('matches.json', out)
     save('tables.json', tables)
     return {'ok': True, 'count': len(profis)}

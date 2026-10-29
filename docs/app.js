@@ -1061,7 +1061,7 @@
     if (isCl) {
       out += `<div style="margin-top:14px">${seg('cl', [['cl', 'Alle Spiele', '#/spiele/profis/cl'], ['cltab', 'Tabelle', '#/spiele/profis/cltab'], ['clko', 'K.-o.-Runde', '#/spiele/profis/clko']], tab, 'sm')}</div>`;
       if (tab === 'cl') out += clGamesView();
-      else if (tab === 'cltab') out += tableView('ucl');
+      else if (tab === 'cltab') out += tableView('ucl') + leadersView('ucl');
       else out += `<div id="clko">${clKoHtml()}</div>`;
       return out;
     }
@@ -1083,7 +1083,7 @@
     } else if (tab === 'tabelle' || tab === 'cltabelle') {
       const key = tab === 'cltabelle' ? 'ucl' : 'bl1';
       out += `<div style="margin-top:14px">${seg('tabelle', [['bl1', 'Bundesliga', '#/spiele/profis/tabelle'], ['ucl', 'Champions League', '#/spiele/profis/cltabelle']], key, 'sm')}</div>`;
-      out += tableView(key);
+      out += tableView(key) + leadersView(key);
     } else {
       out += scorerView(k);
     }
@@ -1108,6 +1108,27 @@
       <span class="tk-teams">${teamRow(m.home, 0)}${teamRow(m.away, 1)}</span></span>
       <span class="tk-stub">${stub}</span>
     </button>`;
+  }
+  // Spieler-Ranglisten einer Liga (alle Vereine): Torschützen, Vorlagen, Scorer – Daten von ESPN, nach jedem Spiel neu
+  const LD_TABS = [['goals', 'Torschützen'], ['assists', 'Vorlagen'], ['scorer', 'Scorer']];
+  function leadersView(key) {
+    const L = (((D.tables || {}).leaders || {})[key]) || {};
+    const all = L.rows || [];
+    if (!all.length) return '';
+    const tab = LD_TABS.some(([k]) => k === UI['ld_' + key]) ? UI['ld_' + key] : 'goals';
+    const val = (r) => (tab === 'scorer' ? r.goals + r.assists : r[tab]);
+    const rows = all.filter((r) => val(r) > 0).sort((a, b) => (val(b) - val(a)) || (b.goals - a.goals) || ((a.games || 99) - (b.games || 99)));
+    const more = !!UI['ldAll_' + key];
+    const show = more ? rows : rows.filter((r, i) => i < 10 || r.isBVB);
+    let rank = 0;
+    let prev = null;
+    const ranks = rows.map((r, i) => { if (val(r) !== prev) { rank = i + 1; prev = val(r); } return rank; });
+    const label = key === 'ucl' ? 'Champions League' : 'Bundesliga';
+    return `<section class="sec"><div class="sec-h"><h2>Top-Spieler</h2><span class="note">${label} · alle Vereine</span></div>
+      <div class="chips" role="group" aria-label="Rangliste">${LD_TABS.map(([k, l]) => `<button type="button" class="${tab === k ? 'on' : ''}" aria-pressed="${tab === k}" data-action="ldtab" data-key="${key}" data-val="${k}">${l}</button>`).join('')}</div>
+      <div class="card flat" style="margin-top:12px"><div class="list">${show.map((r) => `<div class="li ${r.isBVB ? 'me-row' : ''}"><span class="rank">${ranks[rows.indexOf(r)]}</span>${crest({ name: r.team, icon: r.logo }, 'crest sm')}<span class="grow" style="min-width:0"><div class="t ellipsis">${esc(r.name)}</div><div class="s ellipsis">${esc(r.team || UNK)} · ${r.games != null ? r.games + ' Sp. · ' : ''}${r.goals} T. · ${r.assists} V.</div></span><span class="num ${r.isBVB ? 'yellow' : ''}" style="font-size:24px">${val(r)}</span></div>`).join('') || '<p class="muted" style="padding:12px 0;font-size:13px">Noch keine Werte.</p>'}</div>
+      ${rows.length > 10 ? `<button type="button" class="more-btn" data-action="toggle" data-key="ldAll_${key}">${more ? 'Weniger anzeigen' : `Alle ${rows.length} Spieler anzeigen`}</button>` : ''}</div>
+      <p class="faint" style="font-size:11px;font-weight:600;margin:8px 4px 0">Scorer = Tore + Vorlagen · Quelle: ESPN · nach jedem Spiel neu</p></section>`;
   }
   function tableView(key) {
     const t = (D.tables || {})[key];
@@ -2047,10 +2068,6 @@
     }
     out += dfbSection(se.dfb);
     out += explainCard(info);
-    const sc = se.scorers || [];
-    if (sc.length) {
-      out += `<section class="sec"><div class="sec-h"><h2>Liga-Torjäger</h2><span class="note">Bundesliga</span></div><div class="card flat"><div class="list">${sc.slice(0, 15).map((x, i) => `<div class="li ${x.isBVB ? 'me-row' : ''}"><span class="rank">${i + 1}</span>${crest({ name: x.team, icon: x.icon }, 'crest sm')}<span class="grow"><div class="t ellipsis">${esc(x.name)}</div><div class="s">${esc(x.short || x.team || 'k. A.')}</div></span><span class="num ${x.isBVB ? 'yellow' : ''}" style="font-size:24px">${x.goals}</span></div>`).join('')}</div></div></section>`;
-    }
     return out;
   }
 
@@ -3143,6 +3160,7 @@
     const act = a.dataset.action;
     if (act === 'team') { UI[a.dataset.key] = a.dataset.val; render({ forceAnim: true, keepScroll: true }); }
     else if (act === 'toggle') { UI[a.dataset.key] = !UI[a.dataset.key]; render({ animate: false, keepScroll: true }); }
+    else if (act === 'ldtab') { UI['ld_' + a.dataset.key] = a.dataset.val; render({ animate: false, keepScroll: true }); }
     else if (act === 'race') { UI.raceRival = a.dataset.val; render({ animate: false, keepScroll: true }); }
     else if (act === 'clgroup') { UI.clGroup = a.dataset.val; render({ animate: false, keepScroll: true }); }
     else if (act === 'filter') { UI.newsFilter = a.dataset.val; render({ forceAnim: true, keepScroll: true }); }
